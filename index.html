@@ -118,9 +118,9 @@
   body.touch-on #touch{display:block}
   body.inmenu #touch{display:none!important}
   #tzone{position:absolute;inset:0;touch-action:none}
-  #joy{position:absolute;left:calc(100px + var(--sal));bottom:calc(60px + var(--sab));width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);pointer-events:none;opacity:.55;transition:opacity .15s}
-  #joy.act{opacity:1}
-  #knob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid rgba(255,255,255,.65)}
+  #joy{position:absolute;left:calc(110px + var(--sal));bottom:calc(70px + var(--sab));width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);pointer-events:none;opacity:.55;transition:opacity .15s}
+  #joy.act{opacity:1;background:rgba(255,255,255,.11)}
+  #knob{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;background:rgba(255,255,255,.38);border:2px solid rgba(255,255,255,.7);will-change:transform}
   .tb{position:absolute;display:flex;align-items:center;justify-content:center;padding:0;border-radius:50%;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.35);color:#fff;font-weight:700;touch-action:none;-webkit-user-select:none;user-select:none;cursor:pointer}
   .tb.down{background:rgba(255,255,255,.32)}
   .ico{width:1.15em;height:1.15em;vertical-align:-.2em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -148,7 +148,7 @@
     #bJump{bottom:calc(34px + var(--sab))}
     #bSprint{bottom:calc(136px + var(--sab))}
     #bCrouch{bottom:calc(112px + var(--sab))}
-    #joy{bottom:calc(80px + var(--sab))}
+    #joy{bottom:calc(90px + var(--sab))}
   }
 
   /* ===== Main menu font: Zeyada (runs small, so the menu sizes are bumped up) ===== */
@@ -1483,21 +1483,34 @@ if (TOUCH) {
     <button class="tb" id="bUse">USE</button>`;
   document.body.appendChild(wrap);
   const zone = $('tzone'), joy = $('joy'), knob = $('knob');
-  const JR = 50, LOOK = CFG.touchSens;
+  const JR = 64, LOOK = CFG.touchSens;                       // JR: how far the knob travels (bigger = finer control)
+  const JDEAD = 0.08, JFULL = 0.82, JSNAP = 0.2;             // dead zone, where full speed is reached (fraction of JR), axis snap (radians, ~11 deg)
   let joyId = null, lookId = null, jx = 0, jy = 0, lx = 0, ly = 0;
+  const placeJoy = () => { joy.style.left = jx + 'px'; joy.style.top = jy + 'px'; joy.style.bottom = 'auto'; };
   const moveJoy = e => {
-    const dx = e.clientX - jx, dy = e.clientY - jy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, JR / d);
+    let dx = e.clientX - jx, dy = e.clientY - jy, d = Math.hypot(dx, dy);
+    if (d > JR) {   // floating stick: when the thumb drifts past the rim the stick follows it, so you never "fall off" the joystick
+      const over = d - JR, ux = dx / d, uy = dy / d;
+      jx = clamp(jx + ux * over, JR + 12, innerWidth * 0.6); jy = clamp(jy + uy * over, JR + 12, innerHeight - JR - 12);
+      placeJoy(); dx = e.clientX - jx; dy = e.clientY - jy; d = Math.hypot(dx, dy);
+    }
+    const k = d > JR ? JR / d : 1;
     knob.style.transform = `translate(${dx * k}px,${dy * k}px)`;
-    const mag = Math.min(1, d / JR);
-    if (mag < 0.14) { TI.f = 0; TI.s = 0; } else { TI.f = -dy * k / JR; TI.s = dx * k / JR; }
+    const mag = d / JR;
+    if (mag < JDEAD) { TI.f = 0; TI.s = 0; return; }
+    const m = Math.min(1, (mag - JDEAD) / (JFULL - JDEAD));    // smooth ramp from the dead zone to full speed (no need to push to the rim)
+    let a = Math.atan2(dy, dx);
+    const q = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);   // snap to straight forward / back / left / right when close, so walking straight is easy
+    if (Math.abs(a - q) < JSNAP) a = q;
+    TI.s = Math.cos(a) * m; TI.f = -Math.sin(a) * m;
   };
   const resetJoy = () => { joyId = null; TI.f = 0; TI.s = 0; knob.style.transform = ''; joy.classList.remove('act'); joy.style.left = joy.style.top = joy.style.bottom = ''; };
   zone.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (e.clientX < innerWidth * 0.5) {
       if (joyId !== null) return;
-      joyId = e.pointerId; jx = clamp(e.clientX, 70 , innerWidth - 70); jy = clamp(e.clientY, 70, innerHeight - 70);
-      joy.style.left = jx + 'px'; joy.style.top = jy + 'px'; joy.style.bottom = 'auto'; joy.classList.add('act'); moveJoy(e);
+      joyId = e.pointerId; jx = clamp(e.clientX, JR + 12, innerWidth * 0.6); jy = clamp(e.clientY, JR + 12, innerHeight - JR - 12);
+      placeJoy(); joy.classList.add('act'); moveJoy(e);
     } else {
       if (lookId !== null) return;
       lookId = e.pointerId; lx = e.clientX; ly = e.clientY;
