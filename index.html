@@ -33,6 +33,25 @@
   .chip i{display:inline-block;width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px currentColor}
   #objective{position:fixed;right:14px;bottom:14px;max-width:300px;text-align:right;font-size:13px;line-height:1.35;color:#b9b9c9;background:rgba(0,0,0,.5);padding:7px 11px;border-radius:10px;z-index:5;pointer-events:none}
   #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;z-index:20;font-size:18px}
+  body.inmenu #hud,body.inmenu #vig,body.inmenu #cross,body.inmenu #prompt,body.inmenu #inv,body.inmenu #objective,body.inmenu #toast{display:none!important}
+  #menu{position:fixed;left:7vw;top:50%;transform:translateY(-50%);z-index:12;width:min(380px,86vw);display:none}
+  #menu .panel{background:rgba(8,8,12,.72);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:22px 24px;backdrop-filter:blur(4px)}
+  #menu h1{margin:0 0 6px;font-size:54px;line-height:1}
+  #menu h2{margin:0 0 10px;font-size:34px}
+  .mbtn{display:block;width:100%;margin-top:10px;padding:8px 14px;font:inherit;font-size:26px;color:#fff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:12px;cursor:pointer}
+  .mbtn:hover{background:rgba(255,255,255,.2)}
+  .mbtn:disabled{opacity:.4;cursor:default}
+  .mbtn.on{background:#b3392c;border-color:#ff7a6b}
+  .minput{width:100%;box-sizing:border-box;margin-top:10px;padding:8px 12px;font:inherit;font-size:24px;color:#fff;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);border-radius:10px}
+  .mrow{display:flex;gap:8px}
+  .mrow>*{flex:1}
+  .code{font-size:46px;letter-spacing:6px;color:#ffcf5a}
+  .plist{margin:8px 0;font-size:24px}
+  .mmsg{min-height:24px;margin-top:8px;color:#ff8a7a;font-size:19px}
+  .mhint{color:#9aa;font-size:18px;margin-top:6px}
+  #card .mbtn{max-width:260px;margin:14px auto 0}
+  #card table{margin:10px auto;font-size:22px;text-align:left}
+  #card td{padding:2px 14px}
 </style>
 <script type="importmap">
 {"imports":{
@@ -50,6 +69,7 @@
 <div id="inv"></div>
 <div id="objective"></div>
 <div id="toast"></div>
+<div id="menu"></div>
 <div id="overlay" style="display:none"><div id="card"></div></div>
 
 <script type="module">
@@ -60,7 +80,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
    CONFIG — everything tunable lives here
    ====================================================================== */
 const CFG = {
-  files: { map: 'House_Map.glb', player: 'NoobiePlayer.glb', noobie: 'Noobie.glb' },
+  files: { map: 'House_Map.glb', player: 'NoobiePlayer.glb', noobie: 'Noobie.glb', menu: 'Main_Menu.glb', room: 'Noobie_Room.glb' },
   itemFiles: { hammer: 'Hammer.glb', plank: 'Plank.glb', battery: 'Battery.glb',
     key_yellow: 'Yellow_Key.glb', key_pink: 'Pink_Key.glb', key_purple: 'Purple_Key.glb', key_orange: 'Orange_Key.glb',
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
@@ -77,6 +97,8 @@ const CFG = {
   gravity: 70, jump: 22,
   playerSpeed: 12, sprintMult: 1.45, noobieSpeed: 9,
   catchDist: 2.4,
+  roomScale: 2.5, roomY: 400,   // Noobie_Room.glb: scaled like the map, parked high above the house
+  maxPlayers: 6, sendHz: 12,    // multiplayer
   navCell: 1.0, navPad: 0.3, repath: 0.25,
   doorReach: 16, itemReach: 15, doorTime: 0.6, batteriesNeeded: 3,
   camDist: 10, camHeight: 0.85,
@@ -444,13 +466,14 @@ class Actor {
    ====================================================================== */
 const loader = new GLTFLoader();
 const load = f => loader.loadAsync(f);
-let gMap, gPlayer, gNoobie; const gItems = {};
+let gMap, gPlayer, gNoobie, gMenu, gRoom; const gItems = {};
 try {
   const itemNames = Object.keys(CFG.itemFiles);
   const res = await Promise.all([load(CFG.files.map), load(CFG.files.player), load(CFG.files.noobie), ...itemNames.map(n => load(CFG.itemFiles[n]))]);
   [gMap, gPlayer, gNoobie] = res; itemNames.forEach((n, i) => (gItems[n] = res[3 + i]));
+  [gMenu, gRoom] = await Promise.all([load(CFG.files.menu), load(CFG.files.room)]);
 } catch (e) {
-  $('loading').innerHTML = 'Could not load the .glb files.<br><br>Keep <b>index.html</b> and every <b>.glb</b> in the same folder<br>and open it through a local server (e.g. <code>python -m http.server</code>), not file://.';
+  $('loading').innerHTML = 'Could not load the .glb files (including Main_Menu.glb and Noobie_Room.glb).<br><br>Keep <b>index.html</b> and every <b>.glb</b> in the same folder<br>and open it through a local server (e.g. <code>python -m http.server</code>), not file://.';
   throw e;
 }
 
@@ -587,6 +610,7 @@ const playerActor = new Actor(gPlayer), noobieActor = new Actor(gNoobie);
 scene.add(playerActor.root); scene.add(noobieActor.root);
 noobieActor.root.visible = false;
 playerActor.play('Idle'); noobieActor.play('Idle');
+let meActor = playerActor;   // the body you control: the runner model, or Noobie when you are the player Noobie
 
 /* ---------- debug overlay ---------- */
 let dbgPoints = null, dbgPath = null;
@@ -607,6 +631,8 @@ const G = {
   noobie: { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, stuckPos: new THREE.Vector3(), goalReached: false, nudge: 0, nudgeDir: new THREE.Vector2() },
   hint: null,
 };
+const MP = { on: false, active: false, applying: false, started: false, card: false, uid: null, code: null, host: false, role: 'runner', meta: null, players: {}, remote: {},
+  offset: 0, startAt: 0, noobieUid: null, noobieKey: 'bot', botHere: false, unsub: [], roundUnsub: [], last: {}, sendT: 0, title: '', msg: '' };
 
 // doors keep their original local transform, so reparenting is only needed during play
 const origParent = new Map(doors.map(d => [d, d.mesh.parent]));
@@ -691,19 +717,20 @@ function spawnItem(spot, pop = false) {
   const cx = (spot.box.min.x + spot.box.max.x) / 2, cz = (spot.box.min.z + spot.box.max.z) / 2, gy = world.groundAt(cx, cz, spot.box.max.y + 0.5);
   const base = Math.max(isFinite(gy) ? gy : -Infinity, spot.box.min.y) + proto.size.y / 2;   // model is centred on its origin: half its height puts the underside on the surface
   g.position.set(cx, base, cz);
-  const it = { type: spot.type, color: spot.color || null, obj: g, base, phase: Math.random() * 6.28, hit, pop: pop ? 0 : 1 };
+  const it = { type: spot.type, group: spot.group, color: spot.color || null, obj: g, base, phase: Math.random() * 6.28, hit, pop: pop ? 0 : 1 };
   hit.userData.item = it; scene.add(g); items.push(it); itemHits.push(hit);
 }
 // the map has several placeholders for some things (2 hammers, 2 planks, 2 green keys): only one random spot gets the item
-function populateItems() {
+function populateItems(rng = Math.random) {
   for (const it of items) scene.remove(it.obj);
   items.length = 0; itemHits.length = 0;
   const groups = {}; for (const sp of itemSpots) (groups[sp.group] ||= []).push(sp);
-  for (const [g, list] of Object.entries(groups)) { if (g === 'key_pink') continue; spawnItem(list[Math.floor(Math.random() * list.length)]); }   // the pink key only appears once the generator runs
+  for (const [g, list] of Object.entries(groups)) { if (g === 'key_pink') continue; spawnItem(list[Math.floor(rng() * list.length)]); }   // the pink key only appears once the generator runs
 }
 const itemLabel = it => it.type === 'key' ? cap(it.color) + ' key' : cap(it.type);
+function dropItem(it) { scene.remove(it.obj); const i = items.indexOf(it); if (i >= 0) items.splice(i, 1); const j = itemHits.indexOf(it.hit); if (j >= 0) itemHits.splice(j, 1); }
 function pickUp(it) {
-  scene.remove(it.obj); items.splice(items.indexOf(it), 1); itemHits.splice(itemHits.indexOf(it.hit), 1);
+  dropItem(it); net('pickup', it.group);
   if (it.type === 'key') { inv.keys.add(it.color); toast(cap(it.color) + ' key', HEX[it.color]); }
   else if (it.type === 'hammer') { inv.hammer = true; toast('Hammer: you can smash boards now', '#ffd24a'); }
   else if (it.type === 'plank') { inv.plank = true; toast('Plank: find a gap to bridge', '#ffd24a'); }
@@ -711,12 +738,14 @@ function pickUp(it) {
   sfx('pickup'); renderInv();
 }
 function breakBoard(b) {
+  net('board', boards.indexOf(b));
   b.broken = true; b.wantOpen = true; b.closedCol.enabled = false;
   const i = blockers.indexOf(b.mesh); if (i >= 0) blockers.splice(i, 1);
   fx.push({ obj: b.mesh, vel: new THREE.Vector3((Math.random() - .5) * 8, 5, (Math.random() - .5) * 8), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3), t: 0 });
   sfx('smash'); toast('SMASH', '#ff8a4a', 700);
 }
 function unlockDoor(d) {
+  net('unlock', doors.indexOf(d));
   d.locked = false; d.locks.forEach(l => (l.visible = false)); inv.keys.delete(d.lockColor);
   sfx('unlock'); toast(cap(d.lockColor) + ' door unlocked', HEX[d.lockColor]); renderInv();
 }
@@ -728,6 +757,7 @@ function useGenerator() {
     gen.on = true; genLight.visible = true; amb.intensity = 0.8; sfx('gen');
     toast('Generator running. Something dropped out.', '#7dffa0', 2800); if (pinkSpot) spawnItem(pinkSpot, true);
   } else toast(`Battery inserted (${gen.inserted}/${CFG.batteriesNeeded})`, '#7dffa0');
+  net('gen', 0, { n: gen.inserted });
   renderInv();
 }
 function nearBridge() {
@@ -735,8 +765,9 @@ function nearBridge() {
   return [bridgeA, bridgeB].some(p => Math.hypot(player.pos.x - p.x, player.pos.z - p.z) < 9 && Math.abs(player.pos.y - (p.y - 0.1)) < 5);
 }
 function placeBridge() {
-  bridge.placed = true; bridge.wantOpen = true; bridge.closedCol.enabled = true; bridgeMesh.visible = true; inv.plank = false;
-  sfx('place'); toast('Plank laid across the gap', '#ffd24a'); renderInv();
+  bridge.placed = true; bridge.wantOpen = true; bridge.closedCol.enabled = true; bridgeMesh.visible = true;
+  net('bridge', 0); sfx('place');
+  if (!MP.applying) { inv.plank = false; toast('Plank laid across the gap', '#ffd24a'); renderInv(); }
 }
 function renderInv() {
   const chip = (t, c = '#fff') => `<div class="chip" style="color:${c}">${t}</div>`;
@@ -760,7 +791,7 @@ function updateItems(dt) {
   if (gen.on) genLight.intensity = 90 * (0.85 + 0.15 * Math.sin(t * 31) * Math.sin(t * 5.1));
 }
 
-function resetGame() {
+function resetGame(o = {}) {
   for (const d of doors) { restoreDoorMesh(d); d.closedCol.enabled = true; d.openCol.enabled = false; d.wantOpen = false; d.t = 0; d.state = 'closed'; d.locked = !!d.lockColor; d.locks.forEach(l => (l.visible = true)); }
   for (const b of boards) {
     b.broken = false; b.wantOpen = false; b.closedCol.enabled = true; b.mesh.visible = true;
@@ -770,17 +801,24 @@ function resetGame() {
   fx.length = 0;
   if (bridge) { bridge.placed = false; bridge.wantOpen = false; bridge.closedCol.enabled = false; bridgeMesh.visible = false; }
   inv.keys.clear(); inv.hammer = false; inv.plank = false; inv.batteries = 0; gen.inserted = 0; gen.on = false; genLight.visible = false; amb.intensity = 0.5; stopHum();
-  populateItems(); renderInv();
-  player.place(spawnPos.x, spawnPos.z, spawnPos.y); G.yaw = 0; G.pitch = 0.45;
-  playerActor.root.rotation.set(0, 0, 0); playerActor.heading = 0; playerActor.root.visible = !G.firstPerson;
-  Object.assign(G.noobie, { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, goalReached: false, nudge: 0 });
-  noobieActor.root.visible = false; noobieActor.cur = null; noobieActor.play('Idle');
+  populateItems(o.seed != null ? mulberry32(o.seed) : Math.random); renderInv();
+  meActor = o.role === 'noobie' ? noobieActor : playerActor;
+  if (o.role === 'noobie') player.place(roomSpawn.x, roomSpawn.z, roomSpawn.y); else player.place(spawnPos.x, spawnPos.z, spawnPos.y);
+  G.yaw = 0; G.pitch = 0.45; G.toppled = false;
+  for (const a of [playerActor, noobieActor]) { a.root.rotation.set(0, 0, 0); a.heading = 0; }
+  playerActor.root.visible = meActor === playerActor && !G.firstPerson;
+  Object.assign(G.noobie, { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, goalReached: false, nudge: 0, killT: 0, grace: 0 });
+  noobieActor.root.visible = meActor === noobieActor && !G.firstPerson; noobieActor.cur = null; noobieActor.play('Idle');
   G.t = 0; G.state = 'playing'; G.killTimer = 0;
   syncRoots(0);
 }
 
 function interact() {
   const t = pickTarget();
+  if (MP.on && MP.role === 'noobie') {   // player Noobie: plain doors only, no items, keys or tools
+    if (t && t.kind === 'door' && !t.door.locked && !t.door.boards.some(b => !b.broken)) toggleDoor(t.door);
+    return;
+  }
   if (t) {
     if (t.kind === 'item') return pickUp(t.item);
     if (t.kind === 'board') { if (!inv.hammer) { sfx('deny'); return toast('Boarded up. You need a hammer.', '#ffd24a'); } return breakBoard(t.board); }
@@ -798,7 +836,7 @@ function interact() {
 function toggleDoor(d) {
   if (d.state === 'opening' || d.state === 'closing') return;
   if (d.state === 'closed') {
-    d.wantOpen = true; d.state = 'opening'; d.t = 0; d.closedCol.enabled = false;
+    d.wantOpen = true; d.state = 'opening'; d.t = 0; d.closedCol.enabled = false; net('door', doors.indexOf(d), { o: true });
     d.pivot = new THREE.Group(); d.pivot.position.set(d.hinge.x, 0, d.hinge.z); scene.add(d.pivot); d.pivot.updateMatrixWorld(true);
     d.pivot.attach(d.mesh);
   } else { // closing: refuse if somebody stands in the doorway
@@ -806,7 +844,7 @@ function toggleDoor(d) {
       const poly = d.closedCol.band(b.pos.y + CFG.step * 0.5, b.pos.y + b.h);
       if (poly && circlePolyPush(b.pos.x, b.pos.z, b.r + 0.6, poly)) return toast('Something is in the way', '#ffd24a', 900);
     }
-    d.wantOpen = false; d.state = 'closing'; d.t = 0; d.openCol.enabled = false;
+    d.wantOpen = false; d.state = 'closing'; d.t = 0; d.openCol.enabled = false; net('door', doors.indexOf(d), { o: false });
   }
 }
 const ease = t => t * t * (3 - 2 * t);
@@ -855,14 +893,24 @@ function promptFor(t) {
 }
 
 /* ---------- Noobie AI ---------- */
-function nearestPlayer() { return player; } // single-player; extend to a list for multiplayer
+function nearestPlayer() {
+  if (!MP.on) return player;
+  const cand = [];
+  if (MP.role === 'runner' && G.state === 'playing') cand.push(player);
+  for (const [k, r] of Object.entries(MP.remote)) if (!r.isN && !MP.players[k]?.out) cand.push(r);
+  let best = null, bd = Infinity;
+  for (const c of cand) { const d = Math.hypot(c.pos.x - enemy.pos.x, c.pos.z - enemy.pos.z); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
 
 function updateNoobie(dt) {
   const N = G.noobie;
   if (!N.spawned) return;
   if (N.killing) { enemy.move(0, 0, dt); return; }
   if (N.wake > 0) { N.wake -= dt; enemy.move(0, 0, dt); noobieActor.play('Idle'); return; }
+  if (N.killT > 0) { N.killT -= dt; enemy.move(0, 0, dt); return; }
   const target = nearestPlayer();
+  if (!target) { enemy.move(0, 0, dt); noobieActor.play('Idle'); return; }
   const mask = nav.mask();
   N.repath -= dt;
   if (N.repath <= 0) {
@@ -922,11 +970,12 @@ function updateNoobie(dt) {
   noobieActor.play(moving ? 'Walk' : 'Idle', { speed: 1 });
   if (moving) noobieActor.face(wx, wz, dt, 12);
   // catch
-  if (G.state === 'playing' && Math.hypot(target.pos.x - enemy.pos.x, target.pos.z - enemy.pos.z) < CFG.catchDist && Math.abs(target.pos.y - enemy.pos.y) < BODY_H * 0.8) lose();
+  if (!MP.on && G.state === 'playing' && Math.hypot(target.pos.x - enemy.pos.x, target.pos.z - enemy.pos.z) < CFG.catchDist && Math.abs(target.pos.y - enemy.pos.y) < BODY_H * 0.8) lose();
 }
 
 function spawnNoobie() {
-  const N = G.noobie; N.spawned = true; N.wake = CFG.noobieWake;
+  const N = G.noobie; N.spawned = true; N.wake = N.grace = CFG.noobieWake;
+  if (MP.on && MP.role === 'noobie') { player.place(spawnPos.x, spawnPos.z, spawnPos.y); MP.sendT = 0; toast('GO. CATCH THEM ALL.', '#ff5252', 2200); return; }   // the room opens: you walk into the house
   enemy.place(spawnPos.x, spawnPos.z, spawnPos.y);
   noobieActor.root.visible = true; noobieActor.play('Idle');
   toast('NOOBIE HAS SPAWNED', '#ff5252', 2200);
@@ -934,19 +983,23 @@ function spawnNoobie() {
 
 /* ---------- win / lose ---------- */
 function lose() {
-  G.state = 'lost'; G.noobie.killing = true; G.killTimer = 0;
-  noobieActor.face(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z, 1, 99);
-  noobieActor.play('Kill', { once: true, fade: 0.1 });
+  G.state = 'lost'; G.killTimer = 0; G.toppled = true;
+  if (!MP.on) {
+    G.noobie.killing = true;
+    noobieActor.face(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z, 1, 99);
+    noobieActor.play('Kill', { once: true, fade: 0.1 });
+  } else markOut('caught');
   playerActor.play('Idle');
   endScreen('Noobie got you', `You lasted <b>${fmtExact(G.t)}</b> in the house.`);
 }
 function timeUp() {
-  G.state = 'lost'; G.killTimer = 0;   // killing stays false: no Noobie attack, no topple
+  G.state = 'lost'; G.killTimer = 0;   // no Noobie attack, no topple
+  markOut('timeup');
   playerActor.play('Idle');
   endScreen("Time's up", `You didn't get out of the house in <b>${fmt(CFG.timeLimit)}</b>.`);
 }
 function win() {
-  G.state = 'won';
+  G.state = 'won'; markOut('escaped');
   endScreen('You escaped!', `You got out of the house in <b>${fmtExact(G.t)}</b>.`);
 }
 const fmtExact = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
@@ -971,20 +1024,22 @@ function startScreen() {
     <div class="big">Click to start</div>`);
 }
 function endScreen(title, body) {
+  if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, 900); return; }
   document.exitPointerLock?.();
-  setTimeout(() => showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">Click or press R to play again</div>`), 900);
+  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">Click or press R to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, 900);
 }
-function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">Click to resume</div>`); }
+function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">Click to resume</div><button class="mbtn" id="toMenuBtn">${MP.on ? 'Leave room' : 'Main menu'}</button>`); bindMenuBtn(); }
 
 /* ---------- input ---------- */
 addEventListener('keydown', e => {
+  if (G.state === 'menu') return;   // typing in the menu boxes
   if (e.code === 'Space') e.preventDefault();
   G.keys.add(e.code);
   if (e.code === 'Space') G.jumpQ = true;
   if (e.code === 'KeyF') flashOn = !flashOn;
-  if (e.code === 'KeyV') { G.firstPerson = !G.firstPerson; playerActor.root.visible = !G.firstPerson; }
+  if (e.code === 'KeyV') { G.firstPerson = !G.firstPerson; meActor.root.visible = !G.firstPerson; }
   if (e.code === 'KeyN') { dbgPoints.visible = dbgPath.visible = !dbgPoints.visible; }
-  if (e.code === 'KeyR' && (G.state === 'won' || G.state === 'lost')) startRound();
+  if (e.code === 'KeyR' && !MP.on && (G.state === 'won' || G.state === 'lost')) startRound();
   if (e.code === 'KeyE' && G.state === 'playing') interact();
 });
 addEventListener('keyup', e => G.keys.delete(e.code));
@@ -997,15 +1052,17 @@ addEventListener('mousemove', e => {
 addEventListener('contextmenu', e => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', e => { if (e.button === 0 && G.state === 'playing' && !G.paused) interact(); });
 $('overlay').addEventListener('click', () => {
+  if (MP.on) { if (G.paused) resume(); return; }
   if (G.state === 'ready' || G.state === 'won' || G.state === 'lost') startRound();
   else if (G.paused) resume();
 });
+renderer.domElement.addEventListener('click', () => { if (G.state === 'playing' && !G.locked && !G.paused) lockPointer(); });
 function lockPointer() { try { const p = renderer.domElement.requestPointerLock?.(); p?.catch?.(() => {}); } catch (_) {} }
 function startRound() { resetGame(); hideOverlay(); G.paused = false; lockPointer(); }
 function resume() { G.paused = false; hideOverlay(); lockPointer(); }
 document.addEventListener('pointerlockchange', () => {
   G.locked = document.pointerLockElement === renderer.domElement;
-  if (!G.locked && G.state === 'playing' && !G.paused && G.hadLock) { G.paused = true; pauseScreen(); }
+  if (!G.locked && G.state === 'playing' && !G.paused && G.hadLock && !MP.card) { G.paused = true; pauseScreen(); }
   if (G.locked) G.hadLock = true;
 });
 
@@ -1014,53 +1071,67 @@ document.addEventListener('pointerlockchange', () => {
    ====================================================================== */
 function syncRoots(dt) {
   player.smooth(dt); enemy.smooth(dt);
-  playerActor.root.position.set(player.pos.x, player.visY, player.pos.z);
-  if (G.noobie.spawned) { noobieActor.root.position.set(enemy.pos.x, enemy.visY, enemy.pos.z); }
+  meActor.root.position.set(player.pos.x, player.visY, player.pos.z);
+  if (G.noobie.spawned && meActor !== noobieActor) { noobieActor.root.position.set(enemy.pos.x, enemy.visY, enemy.pos.z); }
 }
 
 function updatePlayer(dt) {
-  const k = G.keys;
+  const k = G.keys, N = G.noobie, isN = MP.on && MP.role === 'noobie';
   let f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
   let s = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
-  const sprint = k.has('ShiftLeft') || k.has('ShiftRight');
+  if (isN && N.spawned && N.wake > 0) N.wake -= dt;
+  const killing = isN && N.killT > 0; if (killing) N.killT -= dt;
+  const frozen = G.paused || G.t < 0 || killing || (isN && N.spawned && N.wake > 0);   // countdown, swing, or the beat after the room opens
+  if (frozen) { f = 0; s = 0; }
+  const sprint = !isN && (k.has('ShiftLeft') || k.has('ShiftRight'));
+  const base = isN ? CFG.noobieSpeed : CFG.playerSpeed;
   let wx = 0, wz = 0;
   if (f || s) {
     const fx = Math.sin(G.yaw), fz = Math.cos(G.yaw), rx = -Math.cos(G.yaw), rz = Math.sin(G.yaw);
     wx = fx * f + rx * s; wz = fz * f + rz * s;
-    const l = Math.hypot(wx, wz); wx = wx / l * CFG.playerSpeed * (sprint ? CFG.sprintMult : 1); wz = wz / l * CFG.playerSpeed * (sprint ? CFG.sprintMult : 1);
+    const l = Math.hypot(wx, wz); wx = wx / l * base * (sprint ? CFG.sprintMult : 1); wz = wz / l * base * (sprint ? CFG.sprintMult : 1);
   }
-  player.move(wx, wz, dt, G.jumpQ); G.jumpQ = false;
+  player.move(wx, wz, dt, !isN && !frozen && G.jumpQ); G.jumpQ = false;
   if (player.pos.y < -60) { player.place(spawnPos.x, spawnPos.z, spawnPos.y); }
-  if (enemy.pos.y < -60 && G.noobie.spawned) enemy.place(spawnPos.x, spawnPos.z, spawnPos.y);
-  if (!player.onGround) playerActor.play('Jump', { once: true, fade: 0.08 });
-  else if (wx || wz) playerActor.play('Walk', { speed: sprint ? 1.45 : 1 });
-  else playerActor.play('Idle');
-  if (wx || wz) playerActor.face(wx, wz, dt);
+  if (enemy.pos.y < -60 && G.noobie.spawned && (!MP.on || MP.botHere)) enemy.place(spawnPos.x, spawnPos.z, spawnPos.y);
+  if (isN) { if (!killing) meActor.play(wx || wz ? 'Walk' : 'Idle'); }
+  else if (!player.onGround) meActor.play('Jump', { once: true, fade: 0.08 });
+  else if (wx || wz) meActor.play('Walk', { speed: sprint ? 1.45 : 1 });
+  else meActor.play('Idle');
+  if (wx || wz) meActor.face(wx, wz, dt);
 }
 
 function update(dt) {
+  mpTick(dt);
   if (G.state === 'playing') {
-    G.t += dt;
+    if (!MP.on) G.t += dt;
     updateDoors(dt);
     updatePlayer(dt); updateItems(dt);
     if (!G.noobie.spawned && G.t >= CFG.noobieDelay) spawnNoobie();
-    updateNoobie(dt);
-    if (G.state === 'playing' && G.t >= CFG.timeLimit) timeUp();
-    if (G.state === 'playing' && goldDoor && !goldDoor.locked && (player.pos.z - doorZ) * exitDir > 1.8) win();   // walked out through the front door
+    if (!MP.on || MP.botHere) updateNoobie(dt);
+    if (MP.on && MP.role === 'runner') checkCaught(dt);
+    if (G.state === 'playing' && G.t >= CFG.timeLimit && MP.role !== 'noobie') timeUp();
+    if (G.state === 'playing' && MP.role !== 'noobie' && goldDoor && !goldDoor.locked && (player.pos.z - doorZ) * exitDir > 1.8) win();   // walked out through the front door
   } else if (G.state === 'lost') {
     G.killTimer += dt; updateDoors(dt); updateItems(dt);
-    const k = G.noobie.killing ? Math.min(1, G.killTimer / 0.45) : 0; playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
+    const k = G.toppled ? Math.min(1, G.killTimer / 0.45) : 0; playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
   } else { updateDoors(dt); }
+  if (MP.on && G.state !== 'playing') {   // caught or escaped players keep the world running for everyone else
+    if (!G.noobie.spawned && G.t >= CFG.noobieDelay) spawnNoobie();
+    if (MP.botHere) updateNoobie(dt);
+  }
   syncRoots(dt);
   playerActor.mixer.update(dt);
-  if (G.noobie.spawned) noobieActor.mixer.update(dt);
+  if (G.noobie.spawned || meActor === noobieActor) noobieActor.mixer.update(dt);
   // HUD
-  const left = G.state === 'ready' ? CFG.timeLimit : Math.max(0, CFG.timeLimit - G.t);
+  const left = G.state === 'ready' ? CFG.timeLimit : Math.max(0, CFG.timeLimit - Math.max(0, G.t));
   $('timer').textContent = fmt(left); $('timer').classList.toggle('low', G.state !== 'ready' && left <= 60);
   const sub = $('sub');
+  const isNb = MP.on && MP.role === 'noobie', alive = MP.on ? Object.entries(MP.players).filter(([u, p]) => u !== MP.noobieUid && !p.out).length : 0, tail = MP.on ? ` · ${alive} left` : '';
   if (G.state === 'ready') sub.textContent = '';
-  else if (!G.noobie.spawned) { sub.textContent = 'Noobie wakes in ' + fmt(CFG.noobieDelay - G.t); sub.classList.remove('hunt'); }
-  else { sub.textContent = 'Noobie is hunting you'; sub.classList.add('hunt'); }
+  else if (G.t < 0) { sub.textContent = 'Starting in ' + Math.ceil(-G.t); sub.classList.remove('hunt'); }
+  else if (!G.noobie.spawned) { sub.textContent = (isNb ? 'You are NOOBIE. Released in ' : 'Noobie wakes in ') + fmt(CFG.noobieDelay - G.t) + tail; sub.classList.remove('hunt'); }
+  else { sub.textContent = (isNb ? 'Catch them all' : 'Noobie is hunting you') + tail; sub.classList.add('hunt'); }
 }
 
 const camTarget = new THREE.Vector3(), camDir = new THREE.Vector3();
@@ -1069,7 +1140,7 @@ function updateCamera() {
   const cp = Math.cos(G.pitch);
   camDir.set(-Math.sin(G.yaw) * cp, Math.sin(G.pitch), -Math.cos(G.yaw) * cp); // from target toward camera
   if (G.firstPerson) {
-    playerActor.root.visible = false;
+    meActor.root.visible = false;
     camera.position.copy(camTarget).addScaledVector(camDir, -0.01);
     camera.lookAt(camTarget.x - camDir.x, camTarget.y - camDir.y, camTarget.z - camDir.z);
     return;
@@ -1080,7 +1151,7 @@ function updateCamera() {
   if (hit) dist = Math.max(0.8, hit.distance - 0.6);
   camera.position.copy(camTarget).addScaledVector(camDir, dist);
   camera.lookAt(camTarget);
-  playerActor.root.visible = dist > 2.6 || G.state === 'lost'; // squeezed against a wall: hide the body instead of clipping into it
+  meActor.root.visible = dist > 2.6 || G.state === 'lost'; // squeezed against a wall: hide the body instead of clipping into it
 }
 
 let hintT = 0;
@@ -1088,9 +1159,10 @@ function updatePrompt(dt) {
   hintT -= dt; if (hintT > 0) return; hintT = 0.1;
   const p = $('prompt');
   if (G.state !== 'playing' || G.paused) { p.style.display = 'none'; return; }
-  const h = pickTarget();
+  const isN = MP.on && MP.role === 'noobie';
+  let h = pickTarget(); if (isN && h && !(h.kind === 'door' && !h.door.locked && !h.door.boards.some(b => !b.broken))) h = null;
   let txt = h ? promptFor(h) : '';
-  if (!h && nearBridge()) txt = inv.plank ? 'Lay the plank across the gap' : 'The floor is gone here. A plank would reach across.';
+  if (!h && !isN && nearBridge()) txt = inv.plank ? 'Lay the plank across the gap' : 'The floor is gone here. A plank would reach across.';
   p.style.display = txt ? 'block' : 'none'; p.textContent = txt ? '[E] ' + txt : '';
 }
 
@@ -1099,7 +1171,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (window.__freeze) return;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (!G.paused) update(dt);
+  if (G.state === 'menu') { menuMixer.update(dt); renderer.render(menuScene, menuCam); return; }
+  if (!G.paused || MP.on) update(dt);
   updateCamera();
   updatePrompt(dt);
   lantern.position.set(player.pos.x, player.visY + BODY_H * 0.9, player.pos.z);
@@ -1109,6 +1182,369 @@ function frame(now) {
   flash.intensity = flashOn ? FLASH_I * fl : 0;
   renderer.render(scene, camera);
 }
+
+/* ======================================================================
+   Main menu scene + Noobie room
+   ====================================================================== */
+const menuScene = new THREE.Scene(); menuScene.background = new THREE.Color(0x0b0b10);
+menuScene.add(gMenu.scene); gMenu.scene.updateMatrixWorld(true);
+menuScene.add(new THREE.AmbientLight(0xffffff, 1.1));
+const menuLamp = new THREE.PointLight(0xffd9a0, 25, 30, 1.2); menuLamp.position.set(0, 2.0, 3.2); menuScene.add(menuLamp);
+const menuCam = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 100);
+{
+  const camNode = gMenu.scene.getObjectByName('Camera');   // the camera object inside Main_Menu.glb
+  if (camNode) { camNode.getWorldPosition(menuCam.position); camNode.getWorldQuaternion(menuCam.quaternion); camNode.visible = false; }
+  else menuCam.position.set(0, 1.3, 4.5);
+}
+const menuMixer = new THREE.AnimationMixer(gMenu.scene);
+{ const idle = gMenu.animations.find(a => a.name === 'Idle') || gMenu.animations[0]; if (idle) menuMixer.clipAction(idle).play(); }
+function fitMenuCam() {
+  const w = innerWidth, h = innerHeight; menuCam.aspect = w / h;
+  if (w > h * 1.15) menuCam.setViewOffset(w, h, -w * 0.13, 0, w, h); else menuCam.clearViewOffset();   // landscape: Noobie sits right of the buttons
+  menuCam.updateProjectionMatrix();
+}
+fitMenuCam(); addEventListener('resize', fitMenuCam);
+
+// Noobie_Room.glb lives far above the house, scaled like the map (the characters are scaled by charScale too)
+const roomRoot = gRoom.scene; roomRoot.scale.setScalar(CFG.roomScale); roomRoot.position.set(0, CFG.roomY, 0);
+scene.add(roomRoot); roomRoot.updateMatrixWorld(true);
+roomRoot.traverse(o => {
+  if (!o.isMesh) return;
+  blockers.push(o);
+  world.add(new Collider(new THREE.Vector3(-.5, -.5, -.5), new THREE.Vector3(.5, .5, .5), o.matrixWorld));
+});
+const roomLight = new THREE.PointLight(0xffc78a, 120, 70, 1.2); roomLight.position.set(0, CFG.roomY + 7, 0); scene.add(roomLight);
+const roomSpawn = new THREE.Vector3(0, CFG.roomY + 1, 0);
+
+/* ======================================================================
+   Multiplayer (Firebase Realtime Database, anonymous auth)
+   ====================================================================== */
+const firebaseConfig = {
+  apiKey: 'AIzaSyA_RnLpXjLGkTtIa840K1ESPIoYObAnlso',
+  authDomain: 'noobie-1b6a0.firebaseapp.com',
+  databaseURL: 'https://noobie-1b6a0-default-rtdb.firebaseio.com',
+  projectId: 'noobie-1b6a0',
+  storageBucket: 'noobie-1b6a0.firebasestorage.app',
+  messagingSenderId: '218040356745',
+  appId: '1:218040356745:web:83a6318b33e008e9249b58',
+  measurementId: 'G-QR3XV2DZP3',
+};
+const mulberry32 = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CODE_CH = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from({ length: 5 }, () => CODE_CH[Math.floor(Math.random() * CODE_CH.length)]).join('');
+const srvNow = () => Date.now() + MP.offset;
+const r2 = v => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
+let FB = null;
+const rref = p => FB.D.ref(FB.db, 'rooms/' + MP.code + (p ? '/' + p : ''));
+
+async function fbLoad() {
+  if (FB) return FB;
+  const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
+  const [A, D, U] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-database.js'), import(base + 'firebase-auth.js')]);
+  const app = A.initializeApp(firebaseConfig);
+  const auth = U.initializeAuth(app, { persistence: U.inMemoryPersistence });   // every tab is its own player, which also makes testing with two tabs work
+  const cred = await U.signInAnonymously(auth);
+  MP.uid = cred.user.uid;
+  const db = D.getDatabase(app);
+  D.onValue(D.ref(db, '.info/serverTimeOffset'), s => (MP.offset = s.val() || 0));
+  FB = { D, db };
+  return FB;
+}
+function niceError(e) {
+  const m = String(e?.code || e?.message || e);
+  if (m.includes('operation-not-allowed')) return 'Turn on Anonymous sign-in in the Firebase console (Authentication > Sign-in method).';
+  if (m.includes('PERMISSION_DENIED') || m.includes('permission_denied')) return 'Firebase refused that. Publish the database rules.';
+  return e?.message || m;
+}
+
+/* ---------- rooms ---------- */
+async function mpCreate(name) {
+  const { D } = await fbLoad();
+  for (let i = 0; i < 6; i++) {
+    MP.code = newCode();
+    if ((await D.get(rref())).exists()) continue;
+    try {
+      await D.set(rref(), { meta: { host: MP.uid, status: 'lobby', mode: 'bot', createdAt: D.serverTimestamp() }, players: { [MP.uid]: { name, joinedAt: D.serverTimestamp() } } });
+    } catch (e) { if (i === 5) throw e; continue; }
+    MP.host = true; D.onDisconnect(rref()).remove(); mpAttach(); return;
+  }
+  throw new Error('Could not make a room, try again.');
+}
+async function mpJoin(name, code) {
+  const { D } = await fbLoad();
+  MP.code = String(code || '').toUpperCase().trim();
+  if (MP.code.length !== 5) throw new Error('Codes are 5 characters.');
+  const meta = (await D.get(rref('meta'))).val();
+  if (!meta) throw new Error('No room with that code.');
+  if (meta.status !== 'lobby') throw new Error('That game already started.');
+  const ps = (await D.get(rref('players'))).val() || {};
+  if (!ps[MP.uid] && Object.keys(ps).length >= CFG.maxPlayers) throw new Error('That room is full.');
+  await D.set(rref('players/' + MP.uid), { name, joinedAt: D.serverTimestamp() });
+  MP.host = meta.host === MP.uid; D.onDisconnect(rref('players/' + MP.uid)).remove(); mpAttach();
+}
+function mpAttach() {
+  const { D } = FB; MP.active = true; MP.started = false; MP.card = false; MP.meta = null; MP.players = {};
+  MP.unsub.push(D.onValue(rref('meta'), s => mpMeta(s.val())));
+  MP.unsub.push(D.onValue(rref('players'), s => mpPlayers(s.val() || {})));
+}
+async function mpLeave(msg = '') {
+  const D = FB?.D, code = MP.code, host = MP.host, uid = MP.uid;
+  MP.active = false; MP.started = false; MP.on = false; MP.card = false;
+  for (const u of MP.unsub.splice(0)) { try { u(); } catch (_) {} }
+  mpClearRound();
+  try {
+    if (D && code) {
+      const base = D.ref(FB.db, 'rooms/' + code), target = host ? base : D.ref(FB.db, 'rooms/' + code + '/players/' + uid);
+      await D.onDisconnect(target).cancel(); await D.remove(target);
+    }
+  } catch (e) { console.warn(e); }
+  MP.code = null; MP.host = false; MP.meta = null; MP.players = {};
+  meActor = playerActor; showMainMenu(msg);
+}
+async function mpStart() {
+  const { D } = FB, ids = Object.keys(MP.players), mode = MP.meta?.mode === 'player' ? 'player' : 'bot';
+  if (mode === 'player' && ids.length < 2) throw new Error('A player Noobie needs at least 2 players.');
+  const noobie = mode === 'player' ? ids[Math.floor(Math.random() * ids.length)] : null;   // random pick, nobody chooses
+  const up = { 'meta/status': 'playing', 'meta/seed': Math.floor(Math.random() * 2147483647), 'meta/startAt': srvNow() + 4000, 'meta/noobieUid': noobie, events: null, pos: null };
+  for (const id of ids) up['players/' + id + '/out'] = null;
+  await D.update(rref(), up);
+}
+
+function mpMeta(meta) {
+  if (!MP.active) return;
+  if (!meta) { mpLeave('The host closed the room.'); return; }
+  MP.meta = meta;
+  if (meta.status === 'playing') { if (!MP.started) mpStartRound(meta); }
+  else if (meta.status === 'ended') { if (MP.started) mpShowResults(); }
+  else { if (MP.started) mpStopRound(); else renderLobby(); }
+}
+function mpPlayers(ps) {
+  if (!MP.active) return;
+  const prev = MP.players; MP.players = ps;
+  if (!MP.started) { renderLobby(); return; }
+  const noobieSide = MP.role === 'noobie' || MP.botHere;
+  for (const k of Object.keys(prev)) if (!ps[k] && MP.remote[k] && !MP.remote[k].isN) { scene.remove(MP.remote[k].actor.root); delete MP.remote[k]; }
+  for (const [u, p] of Object.entries(ps)) {
+    if (!p.out || prev[u]?.out) continue;
+    const r = MP.remote[u];
+    if (p.out === 'caught' && r) r.fallen = true;
+    if (p.out === 'escaped' && r) r.actor.root.visible = false;
+    if (p.out === 'caught' && noobieSide && G.noobie.spawned) {   // Noobie stops for a moment and swings
+      const vx = (r ? r.pos.x : player.pos.x), vz = (r ? r.pos.z : player.pos.z), at = MP.role === 'noobie' ? player.pos : enemy.pos;
+      if (Math.hypot(vx - at.x, vz - at.z) < 12) { G.noobie.killT = 1.6; noobieActor.face(vx - at.x, vz - at.z, 1, 99); noobieActor.play('Kill', { once: true, fade: 0.1 }); }
+    }
+  }
+  mpCheckEnd();
+  if (MP.card) mpRenderCard();
+}
+function mpCheckEnd() {
+  if (!MP.host || !MP.started || MP.meta?.status !== 'playing' || G.t < 0) return;
+  const runners = Object.entries(MP.players).filter(([u]) => u !== MP.noobieUid);
+  const noobieGone = MP.noobieUid && !MP.players[MP.noobieUid];
+  if (noobieGone || runners.every(([, p]) => p.out)) FB.D.update(rref('meta'), { status: 'ended' }).catch(() => {});
+}
+function markOut(kind) {
+  if (!MP.on || MP.role !== 'runner') return;
+  FB.D.update(rref('players/' + MP.uid), { out: kind }).catch(() => {});
+}
+
+/* ---------- a round ---------- */
+function mpStartRound(meta) {
+  MP.started = true; MP.card = false; MP.startAt = meta.startAt; MP.noobieUid = meta.noobieUid || null;
+  MP.noobieKey = MP.noobieUid || 'bot'; MP.role = MP.noobieUid === MP.uid ? 'noobie' : 'runner';
+  MP.botHere = !MP.noobieUid && MP.host; MP.last = {}; MP.sendT = 0;
+  mpClearRound();
+  $('menu').style.display = 'none'; document.body.classList.remove('inmenu'); hideOverlay();
+  MP.on = true; G.paused = false;
+  resetGame({ seed: meta.seed, role: MP.role });
+  G.t = -4;
+  $('objective').textContent = MP.role === 'noobie' ? 'You are Noobie. Wait in the room. When the door opens, catch every runner.' : 'Escape through the gold front door. Smash its boards, find the gold key. Work together.';
+  const { D } = FB;
+  MP.roundUnsub.push(D.onChildAdded(rref('events'), s => mpEvent(s.val())));
+  MP.roundUnsub.push(D.onChildAdded(rref('pos'), s => mpPos(s.key, s.val())));
+  MP.roundUnsub.push(D.onChildChanged(rref('pos'), s => mpPos(s.key, s.val())));
+  lockPointer();
+  setTimeout(() => { if (MP.on && !G.locked) toast('Click the game to capture the mouse', '#fff', 3000); }, 500);
+}
+function mpClearRound() {
+  for (const u of MP.roundUnsub.splice(0)) { try { u(); } catch (_) {} }
+  for (const r of Object.values(MP.remote)) if (!r.isN) scene.remove(r.actor.root);
+  MP.remote = {};
+}
+function mpStopRound() {
+  MP.started = false; MP.on = false; MP.card = false; mpClearRound();
+  meActor = playerActor; $('objective').textContent = 'Escape through the gold front door. Smash its boards, find the gold key.';
+  renderLobby();
+}
+function mpEvent(e) {
+  if (!e || !MP.on || e.by === MP.uid) return;
+  MP.applying = true;   // net() ignores anything we do while applying someone else's action
+  try {
+    if (e.type === 'pickup') { const it = items.find(i => i.group === e.id); if (it) dropItem(it); }
+    else if (e.type === 'door') { const d = doors[+e.id]; if (d) { if (e.o && d.state === 'closed') toggleDoor(d); else if (!e.o && d.state === 'open') toggleDoor(d); } }
+    else if (e.type === 'unlock') { const d = doors[+e.id]; if (d && d.locked) { d.locked = false; d.locks.forEach(l => (l.visible = false)); sfx('unlock'); } }
+    else if (e.type === 'board') { const b = boards[+e.id]; if (b && !b.broken) breakBoard(b); }
+    else if (e.type === 'gen') applyGen(e.n || 0);
+    else if (e.type === 'bridge') { if (bridge && !bridge.placed) placeBridge(); }
+  } finally { MP.applying = false; }
+}
+function applyGen(n) {
+  gen.inserted = Math.max(gen.inserted, n);
+  if (gen.inserted >= CFG.batteriesNeeded && !gen.on) {
+    gen.on = true; genLight.visible = true; amb.intensity = 0.8; sfx('gen');
+    toast('Generator running. Something dropped out.', '#7dffa0', 2800); if (pinkSpot) spawnItem(pinkSpot, true);
+  }
+}
+function net(type, id, extra = {}) {
+  if (!MP.on || MP.applying) return;
+  FB.D.push(rref('events'), { type, id: String(id), by: MP.uid, ts: FB.D.serverTimestamp(), ...extra }).catch(() => {});
+}
+
+function nameSprite(txt) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d');
+  x.font = '700 40px "Shadows Into Light Two", cursive'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,.85)'; x.strokeText(txt, 128, 34); x.fillStyle = '#fff'; x.fillText(txt, 128, 34);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, fog: false }));
+  s.scale.set(5, 1.25, 1); s.position.y = BODY_H + 1.0; return s;
+}
+function mpPos(key, v) {
+  if (!MP.on || !v || key === MP.uid || (key === 'bot' && MP.botHere)) return;
+  let r = MP.remote[key];
+  if (!r) {
+    const pos = new THREE.Vector3(v.x, v.y, v.z);
+    if (key === MP.noobieKey) r = { isN: true, actor: noobieActor, pos, hd: v.h };
+    else {
+      const actor = new Actor({ scene: gPlayer.scene.clone(true), animations: gPlayer.animations });
+      actor.root.add(nameSprite(MP.players[key]?.name || '?')); scene.add(actor.root);
+      r = { actor, pos, hd: v.h };
+    }
+    MP.remote[key] = r;
+  }
+  r.tx = v.x; r.ty = v.y; r.tz = v.z; r.th = v.h; r.a = v.a; r.s = v.s;
+}
+function packState(p, actor) {
+  return { x: r2(p.x), y: r2(p.y), z: r2(p.z), h: r2(actor.heading), a: actor.cur || 'Idle', s: r2(actor.actions[actor.cur]?.timeScale ?? 1) };
+}
+function mpTick(dt) {
+  if (!MP.on) return;
+  G.t = (srvNow() - MP.startAt) / 1000;   // one shared clock for the timer and Noobie's release
+  const k = 1 - Math.exp(-14 * dt);
+  for (const r of Object.values(MP.remote)) {
+    if (r.tx === undefined) continue;
+    if (r.isN && !G.noobie.spawned) continue;
+    if (Math.hypot(r.tx - r.pos.x, r.tz - r.pos.z) > 10 || Math.abs(r.ty - r.pos.y) > 10) r.pos.set(r.tx, r.ty, r.tz);
+    else { r.pos.x += (r.tx - r.pos.x) * k; r.pos.y += (r.ty - r.pos.y) * k; r.pos.z += (r.tz - r.pos.z) * k; }
+    r.hd += angDiff(r.hd, r.th) * k;
+    const act = r.actor;
+    if (r.isN) {   // the hunter is drawn by noobieActor, driven through the enemy body
+      enemy.pos.copy(r.pos); enemy.onGround = false; enemy.visY = r.pos.y;
+      act.heading = r.hd; act.root.rotation.y = r.hd;
+      act.root.visible = r.pos.y < CFG.roomY - 100;
+      act.play(r.a, { once: r.a === 'Kill', fade: 0.12, speed: r.s || 1 });
+    } else {
+      act.root.position.copy(r.pos); act.root.rotation.y = r.hd; act.root.rotation.x = r.fallen ? -Math.PI / 2 * 0.98 : 0;
+      act.play(r.a, { once: r.a === 'Jump', fade: 0.1, speed: r.s || 1 });
+      act.mixer.update(dt);
+    }
+  }
+  MP.sendT -= dt;
+  if (MP.sendT > 0) return;
+  MP.sendT = 1 / CFG.sendHz;
+  const out = [[MP.uid, packState(player.pos, meActor)]];
+  if (MP.botHere && G.noobie.spawned) out.push(['bot', packState(enemy.pos, noobieActor)]);
+  const now = performance.now();
+  for (const [key, o] of out) {
+    const s = JSON.stringify(o), l = MP.last[key];
+    if (l && l.s === s && now - l.t < 1000) continue;
+    MP.last[key] = { s, t: now };
+    FB.D.set(rref('pos/' + key), o).catch(() => {});
+  }
+}
+function checkCaught(dt) {   // each runner decides for themselves whether Noobie got them
+  const N = G.noobie;
+  if (!N.spawned || G.state !== 'playing') return;
+  if (N.grace > 0) { N.grace -= dt; return; }
+  if (Math.hypot(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z) < CFG.catchDist && Math.abs(player.pos.y - enemy.pos.y) < BODY_H * 0.8) lose();
+}
+
+/* ======================================================================
+   Menus, lobby, results
+   ====================================================================== */
+const getName = () => { try { return localStorage.getItem('noobieName') || ''; } catch (_) { return ''; } };
+const saveName = n => { try { localStorage.setItem('noobieName', n); } catch (_) {} };
+function setMenu(html) { $('menu').innerHTML = `<div class="panel">${html}</div>`; $('menu').style.display = 'block'; }
+function toMenuState() {
+  G.state = 'menu'; G.paused = false; document.body.classList.add('inmenu'); hideOverlay(); stopHum();
+  document.exitPointerLock?.();
+}
+function showMainMenu(msg = '') {
+  toMenuState();
+  setMenu(`<h1>Noobie House</h1><button class="mbtn" id="bSingle">Singleplayer</button><button class="mbtn" id="bMulti">Multiplayer</button><div class="mmsg">${esc(msg)}</div>`);
+  $('bSingle').onclick = startSingle; $('bMulti').onclick = () => showMultiMenu();
+}
+function startSingle() {
+  MP.on = false; MP.active = false; $('menu').style.display = 'none'; document.body.classList.remove('inmenu');
+  meActor = playerActor; G.state = 'ready'; G.paused = false;
+  $('objective').textContent = 'Escape through the gold front door. Smash its boards, find the gold key.';
+  playerActor.root.visible = true; noobieActor.root.visible = false;
+  player.place(spawnPos.x, spawnPos.z, spawnPos.y); syncRoots(0); startScreen();
+}
+function showMultiMenu(msg = '') {
+  toMenuState();
+  const nm = getName() || 'Noob' + Math.floor(100 + Math.random() * 900);
+  setMenu(`<h2>Multiplayer</h2><input class="minput" id="mName" maxlength="16" placeholder="Your name" value="${esc(nm)}">
+    <button class="mbtn" id="bCreate">Create room</button>
+    <div class="mrow"><input class="minput" id="mCode" maxlength="5" placeholder="CODE" style="text-transform:uppercase"><button class="mbtn" id="bJoin">Join</button></div>
+    <div class="mmsg" id="mMsg">${esc(msg)}</div><button class="mbtn" id="bBack">Back</button>`);
+  const name = () => { const n = $('mName').value.trim().slice(0, 16) || 'Noob'; saveName(n); return n; };
+  const busy = on => ['bCreate', 'bJoin', 'bBack'].forEach(i => { if ($(i)) $(i).disabled = on; });
+  const run = async fn => {
+    busy(true); $('mMsg').textContent = 'Connecting…';
+    try { await fn(); } catch (e) { console.error(e); if ($('mMsg')) { busy(false); $('mMsg').textContent = niceError(e); } }
+  };
+  $('bCreate').onclick = () => run(() => mpCreate(name()));
+  $('bJoin').onclick = () => run(() => mpJoin(name(), $('mCode').value));
+  $('bBack').onclick = () => showMainMenu();
+  $('mCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('bJoin').click(); });
+}
+function renderLobby() {
+  if (!MP.active || MP.started) return;
+  if (G.state !== 'menu') toMenuState();
+  const m = MP.meta || {}, ps = MP.players, ids = Object.keys(ps).sort((a, b) => (ps[a].joinedAt || 0) - (ps[b].joinedAt || 0));
+  const list = ids.map(u => `<div>${esc(ps[u].name)}${u === m.host ? ' 👑' : ''}${u === MP.uid ? ' (you)' : ''}</div>`).join('');
+  const needTwo = m.mode === 'player' && ids.length < 2;
+  const modeBtns = MP.host
+    ? `<div class="mrow"><button class="mbtn ${m.mode !== 'player' ? 'on' : ''}" data-mode="bot">A bot</button><button class="mbtn ${m.mode === 'player' ? 'on' : ''}" data-mode="player">A player</button></div>`
+    : `<div class="plist">${m.mode === 'player' ? 'A random player' : 'A bot'}</div>`;
+  setMenu(`<h2>Room <span class="code">${esc(MP.code)}</span></h2><div class="mhint">Share the code. Up to ${CFG.maxPlayers} players.</div>
+    <div class="plist">${list}</div><div>Noobie is…</div>${modeBtns}
+    <div class="mhint">If Noobie is a player, the game picks one at random. Nobody chooses.</div>
+    ${MP.host ? `<button class="mbtn" id="bStart" ${needTwo ? 'disabled' : ''}>Start game</button>` : '<div class="mhint">Waiting for the host to start…</div>'}
+    <div class="mmsg" id="mMsg">${needTwo && MP.host ? 'A player Noobie needs at least 2 players.' : esc(MP.msg || '')}</div>
+    <button class="mbtn" id="bLeave">Leave room</button>`);
+  $('menu').querySelectorAll('[data-mode]').forEach(b => (b.onclick = () => FB.D.update(rref('meta'), { mode: b.dataset.mode }).catch(e => ($('mMsg').textContent = niceError(e)))));
+  if ($('bStart')) $('bStart').onclick = () => mpStart().catch(e => ($('mMsg').textContent = niceError(e)));
+  $('bLeave').onclick = () => mpLeave();
+}
+function mpShowResults() {
+  MP.card = true; MP.title = 'Round over'; document.exitPointerLock?.(); mpRenderCard();
+}
+function mpRenderCard() {
+  if (!MP.on || !MP.card) return;
+  const ended = MP.meta?.status === 'ended', ps = MP.players, names = { escaped: 'escaped', caught: 'caught', timeup: "time's up" };
+  const rows = Object.entries(ps).map(([u, p]) => `<tr><td>${esc(p.name)}${u === MP.uid ? ' (you)' : ''}</td><td>${u === MP.noobieUid ? 'Noobie' : names[p.out] || 'still running'}</td></tr>`).join('');
+  showOverlay(`<h1>${esc(ended ? 'Round over' : MP.title || '')}</h1><table>${rows}</table>`
+    + (ended ? (MP.host ? '<button class="mbtn" id="bLobby">Back to lobby</button>' : '<div class="mhint">Waiting for the host…</div>') : '<button class="mbtn" id="bWatch">Keep watching</button>')
+    + '<button class="mbtn" id="bLeave2">Leave room</button>');
+  const on = (id, fn) => { const b = $(id); if (b) b.onclick = e => { e.stopPropagation(); fn(); }; };
+  on('bLobby', () => FB.D.update(rref('meta'), { status: 'lobby' }).catch(() => {}));
+  on('bWatch', () => { MP.card = false; hideOverlay(); });
+  on('bLeave2', () => mpLeave());
+}
+function bindMenuBtn() { const b = $('toMenuBtn'); if (b) b.onclick = e => { e.stopPropagation(); quitToMenu(); }; }
+function quitToMenu() { if (MP.active) mpLeave(); else showMainMenu(); }
 
 /* test / debug hooks */
 window.__game = {
@@ -1122,7 +1558,7 @@ window.__game = {
 $('loading').remove();
 $('objective').textContent = 'Escape through the gold front door. Smash its boards, find the gold key.';
 // first frame: put the player at spawn so the world is visible behind the start screen
-player.place(spawnPos.x, spawnPos.z, spawnPos.y); syncRoots(0); startScreen(); $('overlay').style.display = 'flex';
+player.place(spawnPos.x, spawnPos.z, spawnPos.y); syncRoots(0); showMainMenu();
 requestAnimationFrame(frame);
 </script>
 </body>
