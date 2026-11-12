@@ -254,6 +254,7 @@ const CFG = {
   dodoHeight: 1.0,                   // Dodo's height compared with Noobie's (1 = the same height, so the camera and collisions feel identical)
   freeRenames: 1,                    // username changes every new account gets for free
   renameCost: 50,                    // NoobieCoins per username change after the free ones
+  killReward: 10,                    // NoobieCoins a player Noobie earns for each runner they catch (signed-in players only)
   escapeReward: 25,                  // NoobieCoins earned each time you escape the house (signed-in players only)
   itemFiles: { hammer: 'Hammer.glb', plank: 'Plank.glb', battery: 'Battery.glb',
     key_yellow: 'Yellow_Key.glb', key_pink: 'Pink_Key.glb', key_purple: 'Purple_Key.glb', key_orange: 'Orange_Key.glb',
@@ -1916,7 +1917,9 @@ function mpPlayers(ps) {
     if (p.out === 'escaped' && r) r.actor.root.visible = false;
     if (p.out === 'caught' && noobieSide && G.noobie.spawned) {   // Noobie stops for a moment and swings
       const vx = (r ? r.pos.x : player.pos.x), vz = (r ? r.pos.z : player.pos.z), at = MP.role === 'noobie' ? player.pos : enemy.pos;
-      if (Math.hypot(vx - at.x, vz - at.z) < 12) { G.noobie.killT = 1.6; noobieActor.face(vx - at.x, vz - at.z, 1, 99); noobieActor.play('Kill', { once: true, fade: 0.1 }); }
+      if (Math.hypot(vx - at.x, vz - at.z) < 12) {
+        if (MP.role === 'noobie') { const c = awardCoins(CFG.killReward); if (c) toast(`+${c} NoobieCoins`, '#ffcf5a', 2200); }   // a catch made by the player Noobie (not a bot, not a fall)
+        G.noobie.killT = 1.6; noobieActor.face(vx - at.x, vz - at.z, 1, 99); noobieActor.play('Kill', { once: true, fade: 0.1 }); }
     }
   }
   mpCheckEnd();
@@ -2481,12 +2484,15 @@ function startSingle() {
 }
 function showMultiMenu(msg = '') {
   toMenuState();
-  const acct = isAccount() && ACC.profile, nm = acct ? ACC.profile.username : (getName() || randName());   // signed-in players always use their account name
-  setMenu(`<h2>Multiplayer</h2><input class="minput" id="mName" maxlength="16" placeholder="Your name" value="${esc(nm)}" ${acct ? 'readonly' : ''}>
+  // the name is fixed in multiplayer: signed-in players use their account name (changed only in the account menu), guests get one random Noob### name that is kept
+  const acct = isAccount() && ACC.profile;
+  let gn = getName(); if (!/^Noob\d{3}$/.test(gn)) { gn = randName(); saveName(gn); }
+  const nm = acct ? ACC.profile.username : gn;
+  setMenu(`<h2>Multiplayer</h2><input class="minput" id="mName" maxlength="16" value="${esc(nm)}" readonly tabindex="-1" aria-label="Your name (fixed)">
     <button class="mbtn" id="bCreate">Create room</button>
     <div class="mrow"><input class="minput" id="mCode" maxlength="14" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" style="text-transform:uppercase"><button class="mbtn" id="bJoin">Join</button></div>
     <div class="mmsg" id="mMsg">${esc(msg)}</div><button class="mbtn" id="bBack">Back</button>`);
-  const name = () => { if (acct) return ACC.profile.username; const n = $('mName').value.trim().slice(0, 16) || 'Noob'; saveName(n); return n; };
+  const name = () => nm;
   const busy = on => ['bCreate', 'bJoin', 'bBack'].forEach(i => { if ($(i)) $(i).disabled = on; });
   const run = async fn => {
     busy(true); $('mMsg').textContent = 'Connecting…';
