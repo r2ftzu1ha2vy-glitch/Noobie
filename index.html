@@ -7,10 +7,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Noobie House</title>
+<title>Noobie</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light+Two&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light+Two&family=Zeyada&display=swap" rel="stylesheet">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Shadows Into Light Two",cursive,system-ui,sans-serif;color:#fff;user-select:none}
   button,input,kbd{font-family:inherit}
@@ -148,6 +148,31 @@
     #bSprint{bottom:calc(136px + var(--sab))}
     #bCrouch{bottom:calc(112px + var(--sab))}
     #joy{bottom:calc(80px + var(--sab))}
+  }
+
+  /* ===== Main menu font: Zeyada (runs small, so the menu sizes are bumped up) ===== */
+  #menu{font-family:"Zeyada","Shadows Into Light Two",cursive,system-ui,sans-serif}
+  #menu h1{font-size:68px}
+  #menu h2{font-size:44px}
+  #menu .mbtn{font-size:34px}
+  #menu .minput{font-size:30px}
+  #menu .plist{font-size:30px}
+  #menu .code{font-size:56px}
+  #menu .mhint{font-size:23px}
+  #menu .mmsg{font-size:24px}
+  @media (max-width:700px),(max-height:520px){
+    #menu h1{font-size:clamp(42px,11vw,58px)}
+    #menu h2{font-size:34px}
+    #menu .mbtn{font-size:28px}
+    #menu .minput{font-size:26px}
+    #menu .plist{font-size:25px}
+    #menu .code{font-size:42px}
+    #menu .mhint{font-size:20px}
+    #menu .mmsg{font-size:21px}
+  }
+  @media (max-height:520px) and (orientation:landscape){
+    #menu h1{font-size:46px}
+    #menu .mbtn{font-size:25px}
   }
 </style>
 <script type="importmap">
@@ -1178,7 +1203,7 @@ function toast(msg, color = '#fff', ms = 1500) {
 function showOverlay(html) { $('card').innerHTML = html; $('overlay').style.display = 'flex'; }
 function hideOverlay() { $('overlay').style.display = 'none'; }
 function startScreen() {
-  showOverlay(`<h1>Noobie House</h1>
+  showOverlay(`<h1>Noobie</h1>
     <p>Get out through the <b style="color:#ffcf5a">gold front door</b>: find its key, smash the boards nailed across it with a hammer, and walk out.
        You have <b>${fmt(CFG.timeLimit)}</b> to get out. Noobie wakes up after <b>${CFG.noobieDelay}s</b> and hunts you.</p>
     <p style="font-size:14px;color:#9aa">Coloured doors need the key of their colour. Three batteries start the generator, which drops the pink key.
@@ -1787,7 +1812,7 @@ function toMenuState() {
 }
 function showMainMenu(msg = '') {
   toMenuState();
-  setMenu(`<h1>Noobie House</h1><button class="mbtn" id="bSingle">Singleplayer</button><button class="mbtn" id="bMulti">Multiplayer</button><div class="mmsg">${esc(msg)}</div>`);
+  setMenu(`<h1>Noobie</h1><button class="mbtn" id="bSingle">Singleplayer</button><button class="mbtn" id="bMulti">Multiplayer</button><div class="mmsg">${esc(msg)}</div>`);
   $('bSingle').onclick = startSingle; $('bMulti').onclick = () => showMultiMenu();
 }
 function startSingle() {
