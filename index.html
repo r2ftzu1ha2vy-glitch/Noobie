@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Noobie House</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,6 +56,95 @@
   #card .mbtn{max-width:260px;margin:14px auto 0}
   #card table{margin:10px auto;font-size:22px;text-align:left}
   #card td{padding:2px 14px}
+
+  /* ===== Mobile / touch ===== */
+  :root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
+  html,body{height:100%;height:100dvh;width:100%;overscroll-behavior:none;touch-action:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none}
+  canvas{touch-action:none;width:100%;height:100%}
+  button,.mbtn{touch-action:manipulation}
+  #hud{top:calc(14px + var(--sat))}
+  #inv{left:calc(14px + var(--sal));bottom:calc(14px + var(--sab))}
+  #objective{right:calc(14px + var(--sar));bottom:calc(14px + var(--sab))}
+  #card{width:min(460px,92vw);box-sizing:border-box;max-height:92vh;max-height:92dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+  #menu{max-height:92vh;max-height:92dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;left:calc(7vw + var(--sal))}
+  #toast{max-width:90vw;white-space:normal;text-align:center}
+  #sub{max-width:84vw}
+
+  /* small screens (phones, landscape or portrait) */
+  @media (max-width:700px),(max-height:520px){
+    #timer{font-size:clamp(22px,5.5vw,34px);padding:2px 14px;border-radius:10px}
+    #sub{font-size:12px;padding:2px 9px;margin-top:4px}
+    #prompt{font-size:14px;padding:4px 10px;top:58%}
+    #toast{font-size:clamp(18px,4.6vw,26px);top:20%}
+    .chip{font-size:12px;padding:3px 8px;gap:5px}
+    .chip i{width:10px;height:10px}
+    #card{padding:16px 18px;border-radius:14px}
+    #card h1{font-size:26px}
+    #card p{font-size:15px;line-height:1.35}
+    #card .big{font-size:17px;margin-top:12px}
+    #card table{font-size:18px}
+    #menu .panel{padding:14px 18px;border-radius:14px}
+    #menu h1{font-size:clamp(34px,9vw,48px)}
+    #menu h2{font-size:26px;margin-bottom:6px}
+    .mbtn{font-size:22px;padding:7px 12px;min-height:44px;margin-top:8px}
+    .minput{font-size:20px;padding:7px 10px}
+    .code{font-size:34px;letter-spacing:4px}
+    .plist{font-size:19px}
+    .mhint{font-size:15px}
+    .mmsg{font-size:16px}
+  }
+  @media (max-height:520px) and (orientation:landscape){
+    #menu .panel{padding:10px 16px}
+    #menu h1{font-size:34px;margin-bottom:2px}
+    .mbtn{font-size:19px;padding:4px 12px;min-height:38px;margin-top:6px}
+    #card h1{font-size:22px}
+    #card p{font-size:13px;margin:4px 0}
+    #card .big{margin-top:8px}
+  }
+  @media (orientation:portrait){
+    #menu{left:50%;transform:translate(-50%,-50%);width:min(380px,90vw)}
+  }
+
+  /* touch HUD placement: keep the corners free for the thumbs */
+  body.touch #inv{top:calc(12px + var(--sat));bottom:auto;max-width:30vw}
+  body.touch #objective{left:50%;right:auto;transform:translateX(-50%);bottom:calc(8px + var(--sab));max-width:36vw;font-size:11px;text-align:center;padding:4px 8px;opacity:.85}
+  @media (orientation:portrait){
+    body.touch #inv{top:calc(64px + var(--sat));max-width:46vw}
+    body.touch #objective{max-width:78vw;bottom:calc(210px + var(--sab))}
+  }
+
+  /* touch controls */
+  #touch{position:fixed;inset:0;z-index:7;display:none;touch-action:none}
+  body.touch-on #touch{display:block}
+  body.inmenu #touch{display:none!important}
+  #tzone{position:absolute;inset:0;touch-action:none}
+  #joy{position:absolute;left:calc(100px + var(--sal));bottom:calc(60px + var(--sab));width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);pointer-events:none;opacity:.55;transition:opacity .15s}
+  #joy.act{opacity:1}
+  #knob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid rgba(255,255,255,.65)}
+  .tb{position:absolute;display:flex;align-items:center;justify-content:center;padding:0;border-radius:50%;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.35);color:#fff;font-weight:700;touch-action:none;-webkit-user-select:none;user-select:none;cursor:pointer}
+  .tb.down{background:rgba(255,255,255,.32)}
+  .tb.on{background:#b3392c;border-color:#ff7a6b}
+  #bUse{right:calc(22px + var(--sar));bottom:calc(26px + var(--sab));width:84px;height:84px;font-size:22px;background:rgba(179,57,44,.55);border-color:rgba(255,122,107,.8)}
+  #bJump{right:calc(122px + var(--sar));bottom:calc(20px + var(--sab));width:62px;height:62px;font-size:15px}
+  #bSprint{right:calc(36px + var(--sar));bottom:calc(122px + var(--sab));width:58px;height:58px;font-size:13px}
+  .tsm{top:calc(10px + var(--sat));width:42px;height:42px;font-size:17px}
+  #bPause{right:calc(10px + var(--sar))}
+  #bFlash{right:calc(60px + var(--sar))}
+  #bView{right:calc(110px + var(--sar))}
+  #bFull{right:calc(160px + var(--sar))}
+  #bCrouch{right:calc(128px + var(--sar));bottom:calc(98px + var(--sab));width:56px;height:56px;font-size:11px}
+  body.noj #bJump,body.noj #bSprint,body.noj #bCrouch{display:none}
+  #rotate{display:none;position:absolute;left:50%;top:calc(108px + var(--sat));transform:translateX(-50%);padding:5px 12px;border-radius:999px;background:rgba(0,0,0,.6);font-size:14px;white-space:nowrap;pointer-events:none;animation:fadeout 6s forwards}
+  @keyframes fadeout{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}
+  @media (orientation:portrait){
+    .tsm{top:calc(60px + var(--sat))}
+    #rotate{display:block}
+    #bUse{bottom:calc(40px + var(--sab))}
+    #bJump{bottom:calc(34px + var(--sab))}
+    #bSprint{bottom:calc(136px + var(--sab))}
+    #bCrouch{bottom:calc(112px + var(--sab))}
+    #joy{bottom:calc(80px + var(--sab))}
+  }
 </style>
 <script type="importmap">
 {"imports":{
@@ -84,6 +177,8 @@ const CFG = {
   itemFiles: { hammer: 'Hammer.glb', plank: 'Plank.glb', battery: 'Battery.glb',
     key_yellow: 'Yellow_Key.glb', key_pink: 'Pink_Key.glb', key_purple: 'Purple_Key.glb', key_orange: 'Orange_Key.glb',
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
+  menuMusic: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/u_p5wfvlgzy6-horror-main-menu-385962.mp3',   // or a local file next to index.html
+  menuMusicVolume: 0.5,
   spawnName: 'Spawn',
   doorName: 'Door',            // exact node name that can be clicked open
   noobieDelay: 30,             // Noobie spawns after this many seconds
@@ -102,9 +197,11 @@ const CFG = {
   navCell: 1.0, navPad: 0.3, repath: 0.25,
   doorReach: 16, itemReach: 15, doorTime: 0.6, batteriesNeeded: 3,
   camDist: 10, camHeight: 0.85,
+  crouchH: 0.62, crouchSpeed: 0.5, crouchEye: 0.3, crouchSquash: 0.38,   // crouch: body height (x standing), speed (x), eye drop, model squash
   sens: 0.0024,
 };
 const BODY_H = 1.62 * CFG.charScale;
+const CROUCH_H = BODY_H * CFG.crouchH;
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
 
@@ -477,8 +574,9 @@ try {
   throw e;
 }
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const TOUCH = params.has('touch') || matchMedia('(pointer:coarse)').matches;   // phones / tablets
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.5 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;   // keeps the flashlight from blowing out close walls
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -497,7 +595,13 @@ flash.target.position.set(0, 0, -10); camera.add(flash.target);
 const FLASH_I = flash.intensity; let flashOn = true;
 // dim warm lantern around the player so the ground at your feet is never pitch black
 const lantern = new THREE.PointLight(0xffb36b, 45, 22, 1.8); scene.add(lantern);
-addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+const BASE_FOV = 70;
+function fitCamera() {   // portrait screens get a wider vertical FOV so the view isn't a keyhole
+  const a = innerWidth / innerHeight;
+  camera.aspect = a; camera.fov = a < 1 ? Math.min(100, BASE_FOV + (1 - a) * 45) : BASE_FOV;
+  camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
+}
+addEventListener('resize', fitCamera); addEventListener('orientationchange', () => setTimeout(fitCamera, 250)); fitCamera();
 
 /* ---------- map -> colliders, doors, locks, boards, item spots ---------- */
 const mapRoot = gMap.scene; scene.add(mapRoot); mapRoot.updateMatrixWorld(true);
@@ -627,7 +731,7 @@ buildDebug();
    ====================================================================== */
 const G = {
   state: 'ready', t: 0, yaw: 0, pitch: 0.45, firstPerson: false, locked: false, paused: false,
-  keys: new Set(), jumpQ: false,
+  keys: new Set(), jumpQ: false, crouching: false, crouchK: 0,
   noobie: { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, stuckPos: new THREE.Vector3(), goalReached: false, nudge: 0, nudgeDir: new THREE.Vector2() },
   hint: null,
 };
@@ -646,7 +750,7 @@ function restoreDoorMesh(d) {
 /* ======================================================================
    Inventory, pickups, boards, bridge, generator
    ====================================================================== */
-const inv = { keys: new Set(), hammer: false, plank: false, batteries: 0 };
+const inv = { keys: new Set(), hammer: false, plank: false, batteries: 0, held: null };   // one item at a time: held = {type, color, group}
 const gen = { inserted: 0, on: false };
 const items = [], itemHits = [], fx = [];
 const goldDoor = doors.find(d => d.lockColor === 'gold');
@@ -710,15 +814,20 @@ if (bridge) {
   bridgeMesh.position.copy(pos); bridgeMesh.quaternion.copy(q); bridgeMesh.visible = false; scene.add(bridgeMesh);
 }
 
-function spawnItem(spot, pop = false) {
-  const key = spot.type === 'key' ? 'key_' + spot.color : spot.type, proto = itemProto[key]; if (!proto) return;
+const protoKey = (type, color) => type === 'key' ? 'key_' + color : type;
+// put a pickup on a surface at (x, surfaceY, z); the model is centred on its origin, so half its height puts the underside on the surface
+function placeItem(type, group, color, x, surfaceY, z, pop = false) {
+  const proto = itemProto[protoKey(type, color)]; if (!proto) return;
   const g = new THREE.Group(); g.add(proto.obj.clone(true));
   const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), new THREE.MeshBasicMaterial()); hit.visible = false; g.add(hit);   // generous invisible click target
-  const cx = (spot.box.min.x + spot.box.max.x) / 2, cz = (spot.box.min.z + spot.box.max.z) / 2, gy = world.groundAt(cx, cz, spot.box.max.y + 0.5);
-  const base = Math.max(isFinite(gy) ? gy : -Infinity, spot.box.min.y) + proto.size.y / 2;   // model is centred on its origin: half its height puts the underside on the surface
-  g.position.set(cx, base, cz);
-  const it = { type: spot.type, group: spot.group, color: spot.color || null, obj: g, base, phase: Math.random() * 6.28, hit, pop: pop ? 0 : 1 };
+  const base = surfaceY + proto.size.y / 2;
+  g.position.set(x, base, z);
+  const it = { type, group, color: color || null, obj: g, base, surf: surfaceY, phase: Math.random() * 6.28, hit, pop: pop ? 0 : 1 };
   hit.userData.item = it; scene.add(g); items.push(it); itemHits.push(hit);
+}
+function spawnItem(spot, pop = false) {
+  const cx = (spot.box.min.x + spot.box.max.x) / 2, cz = (spot.box.min.z + spot.box.max.z) / 2, gy = world.groundAt(cx, cz, spot.box.max.y + 0.5);
+  placeItem(spot.type, spot.group, spot.color, cx, Math.max(isFinite(gy) ? gy : -Infinity, spot.box.min.y), cz, pop);
 }
 // the map has several placeholders for some things (2 hammers, 2 planks, 2 green keys): only one random spot gets the item
 function populateItems(rng = Math.random) {
@@ -730,11 +839,22 @@ function populateItems(rng = Math.random) {
 const itemLabel = it => it.type === 'key' ? cap(it.color) + ' key' : cap(it.type);
 function dropItem(it) { scene.remove(it.obj); const i = items.indexOf(it); if (i >= 0) items.splice(i, 1); const j = itemHits.indexOf(it.hit); if (j >= 0) itemHits.splice(j, 1); }
 function pickUp(it) {
+  const old = inv.held, x = it.obj.position.x, z = it.obj.position.z, surf = it.surf;
   dropItem(it); net('pickup', it.group);
-  if (it.type === 'key') { inv.keys.add(it.color); toast(cap(it.color) + ' key', HEX[it.color]); }
-  else if (it.type === 'hammer') { inv.hammer = true; toast('Hammer: you can smash boards now', '#ffd24a'); }
-  else if (it.type === 'plank') { inv.plank = true; toast('Plank: find a gap to bridge', '#ffd24a'); }
-  else if (it.type === 'battery') { inv.batteries++; toast(`Battery (${inv.batteries} carried)`, '#7dffa0'); }
+  inv.keys.clear(); inv.hammer = false; inv.plank = false; inv.batteries = 0;   // hands hold exactly one thing
+  inv.held = { type: it.type, color: it.color, group: it.group };
+  let msg, col = '#ffd24a';
+  if (it.type === 'key') { inv.keys.add(it.color); msg = cap(it.color) + ' key'; col = HEX[it.color]; }
+  else if (it.type === 'hammer') msg = 'Hammer: you can smash boards now';
+  else if (it.type === 'plank') msg = 'Plank: find a gap to bridge';
+  else if (it.type === 'battery') { inv.batteries = 1; msg = 'Battery'; col = '#7dffa0'; }
+  if (it.type === 'hammer') inv.hammer = true; else if (it.type === 'plank') inv.plank = true;
+  if (old) {   // swap: what you were holding is left where the new item was
+    placeItem(old.type, old.group, old.color, x, surf, z, true);
+    net('drop', old.group, { itype: old.type, color: old.color || '', x, z, s: surf });
+    msg = `${itemLabel(it)} picked up. Dropped ${itemLabel(old)}.`;
+  }
+  toast(msg, col, old ? 2200 : 1500);
   sfx('pickup'); renderInv();
 }
 function breakBoard(b) {
@@ -746,13 +866,13 @@ function breakBoard(b) {
 }
 function unlockDoor(d) {
   net('unlock', doors.indexOf(d));
-  d.locked = false; d.locks.forEach(l => (l.visible = false)); inv.keys.delete(d.lockColor);
+  d.locked = false; d.locks.forEach(l => (l.visible = false)); inv.keys.delete(d.lockColor); inv.held = null;
   sfx('unlock'); toast(cap(d.lockColor) + ' door unlocked', HEX[d.lockColor]); renderInv();
 }
 function useGenerator() {
   if (gen.on) { sfx('deny'); return toast('The generator is already running', '#7dffa0'); }
   if (!inv.batteries) { sfx('deny'); return toast(`Needs ${CFG.batteriesNeeded} batteries (${gen.inserted}/${CFG.batteriesNeeded})`, '#ffd24a'); }
-  gen.inserted += inv.batteries; inv.batteries = 0; sfx('battery');
+  gen.inserted += inv.batteries; inv.batteries = 0; inv.held = null; sfx('battery');
   if (gen.inserted >= CFG.batteriesNeeded) {
     gen.on = true; genLight.visible = true; amb.intensity = 0.8; sfx('gen');
     toast('Generator running. Something dropped out.', '#7dffa0', 2800); if (pinkSpot) spawnItem(pinkSpot, true);
@@ -767,7 +887,7 @@ function nearBridge() {
 function placeBridge() {
   bridge.placed = true; bridge.wantOpen = true; bridge.closedCol.enabled = true; bridgeMesh.visible = true;
   net('bridge', 0); sfx('place');
-  if (!MP.applying) { inv.plank = false; toast('Plank laid across the gap', '#ffd24a'); renderInv(); }
+  if (!MP.applying) { inv.plank = false; inv.held = null; toast('Plank laid across the gap', '#ffd24a'); renderInv(); }
 }
 function renderInv() {
   const chip = (t, c = '#fff') => `<div class="chip" style="color:${c}">${t}</div>`;
@@ -800,12 +920,12 @@ function resetGame(o = {}) {
   }
   fx.length = 0;
   if (bridge) { bridge.placed = false; bridge.wantOpen = false; bridge.closedCol.enabled = false; bridgeMesh.visible = false; }
-  inv.keys.clear(); inv.hammer = false; inv.plank = false; inv.batteries = 0; gen.inserted = 0; gen.on = false; genLight.visible = false; amb.intensity = 0.5; stopHum();
+  inv.keys.clear(); inv.hammer = false; inv.plank = false; inv.batteries = 0; inv.held = null; G.crouching = false; G.crouchK = 0; if (typeof TI !== 'undefined') { TI.crouch = false; $('bCrouch')?.classList.remove('on'); } gen.inserted = 0; gen.on = false; genLight.visible = false; amb.intensity = 0.5; stopHum();
   populateItems(o.seed != null ? mulberry32(o.seed) : Math.random); renderInv();
   meActor = o.role === 'noobie' ? noobieActor : playerActor;
   if (o.role === 'noobie') player.place(roomSpawn.x, roomSpawn.z, roomSpawn.y); else player.place(spawnPos.x, spawnPos.z, spawnPos.y);
   G.yaw = 0; G.pitch = 0.45; G.toppled = false;
-  for (const a of [playerActor, noobieActor]) { a.root.rotation.set(0, 0, 0); a.heading = 0; }
+  for (const a of [playerActor, noobieActor]) { a.root.rotation.set(0, 0, 0); a.root.scale.y = 1; a.heading = 0; }
   playerActor.root.visible = meActor === playerActor && !G.firstPerson;
   Object.assign(G.noobie, { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, goalReached: false, nudge: 0, killT: 0, grace: 0 });
   noobieActor.root.visible = meActor === noobieActor && !G.firstPerson; noobieActor.cur = null; noobieActor.play('Idle');
@@ -866,7 +986,7 @@ function updateDoors(dt) {
 const ray = new THREE.Raycaster(); ray.far = 400;
 const mouse = new THREE.Vector2();
 function pickTarget() {
-  if (G.locked) mouse.set(0, 0);
+  if (G.locked || TOUCH) mouse.set(0, 0);
   ray.far = 400; ray.setFromCamera(mouse, camera);
   const eye = _v.set(player.pos.x, player.visY + BODY_H * 0.5, player.pos.z);
   const hm = ray.intersectObjects(blockers, false)[0], hi = ray.intersectObjects(itemHits, false)[0];
@@ -883,7 +1003,7 @@ function pickTarget() {
 }
 const pickDoor = pickTarget;
 function promptFor(t) {
-  if (t.kind === 'item') return 'Pick up ' + itemLabel(t.item);
+  if (t.kind === 'item') return (inv.held ? 'Swap ' + itemLabel(inv.held) + ' for ' : 'Pick up ') + itemLabel(t.item);
   if (t.kind === 'board') return inv.hammer ? 'Smash the boards' : 'Boarded up (needs a hammer)';
   if (t.kind === 'gen') return gen.on ? 'Generator running' : inv.batteries ? `Insert ${inv.batteries} ${inv.batteries > 1 ? 'batteries' : 'battery'}` : `Generator needs batteries (${gen.inserted}/${CFG.batteriesNeeded})`;
   const d = t.door;
@@ -1017,18 +1137,23 @@ function startScreen() {
     <p>Get out through the <b style="color:#ffcf5a">gold front door</b>: find its key, smash the boards nailed across it with a hammer, and walk out.
        You have <b>${fmt(CFG.timeLimit)}</b> to get out. Noobie wakes up after <b>${CFG.noobieDelay}s</b> and hunts you.</p>
     <p style="font-size:14px;color:#9aa">Coloured doors need the key of their colour. Three batteries start the generator, which drops the pink key.
-       A plank can bridge the hole on the top floor. Items are in a random spot every run.</p>
-    <p><kbd>W A S D</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump<br>
-       <kbd>Mouse</kbd> look &nbsp; <kbd>E</kbd> / <kbd>Click</kbd> use &nbsp; <kbd>V</kbd> first-person<br>
-       <kbd>F</kbd> flashlight &nbsp; <kbd>Esc</kbd> pause</p>
-    <div class="big">Click to start</div>`);
+       A plank can bridge the hole on the top floor. Items are in a random spot every run. You can carry only <b>one item</b>: picking up another leaves the old one where the new one was.</p>
+    ${TOUCH
+      ? `<p><b>Left thumb</b>: move &nbsp; <b>Right thumb</b>: drag to look<br>
+         <b>USE</b> (aim at the dot) &nbsp; <b>JUMP</b> &nbsp; <b>RUN</b> &nbsp; <b>CROUCH</b> (toggle)<br>
+         Top buttons: flashlight, camera view, pause</p>
+         <p style="font-size:13px;color:#9aa">Best played in landscape. Tap the corner button to go fullscreen.</p>`
+      : `<p><kbd>W A S D</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch<br>
+         <kbd>Mouse</kbd> look &nbsp; <kbd>E</kbd> / <kbd>Click</kbd> use &nbsp; <kbd>V</kbd> first-person<br>
+         <kbd>F</kbd> flashlight &nbsp; <kbd>Esc</kbd> pause</p>`}
+    <div class="big">${TOUCH ? 'Tap' : 'Click'} to start</div>`);
 }
 function endScreen(title, body) {
   if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, 900); return; }
   document.exitPointerLock?.();
-  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">Click or press R to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, 900);
+  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">${TOUCH ? 'Tap' : 'Click or press R'} to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, 900);
 }
-function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">Click to resume</div><button class="mbtn" id="toMenuBtn">${MP.on ? 'Leave room' : 'Main menu'}</button>`); bindMenuBtn(); }
+function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">${TOUCH ? 'Tap' : 'Click'} to resume</div><button class="mbtn" id="toMenuBtn">${MP.on ? 'Leave room' : 'Main menu'}</button>`); bindMenuBtn(); }
 
 /* ---------- input ---------- */
 addEventListener('keydown', e => {
@@ -1036,7 +1161,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   G.keys.add(e.code);
   if (e.code === 'Space') G.jumpQ = true;
-  if (e.code === 'KeyF') flashOn = !flashOn;
+  if (e.code === 'KeyF') flashOn = !flashOn;   // C (held) = crouch
   if (e.code === 'KeyV') { G.firstPerson = !G.firstPerson; meActor.root.visible = !G.firstPerson; }
   if (e.code === 'KeyN') { dbgPoints.visible = dbgPath.visible = !dbgPoints.visible; }
   if (e.code === 'KeyR' && !MP.on && (G.state === 'won' || G.state === 'lost')) startRound();
@@ -1057,9 +1182,97 @@ $('overlay').addEventListener('click', () => {
   else if (G.paused) resume();
 });
 renderer.domElement.addEventListener('click', () => { if (G.state === 'playing' && !G.locked && !G.paused) lockPointer(); });
-function lockPointer() { try { const p = renderer.domElement.requestPointerLock?.(); p?.catch?.(() => {}); } catch (_) {} }
+function lockPointer() { if (TOUCH) return; try { const p = renderer.domElement.requestPointerLock?.(); p?.catch?.(() => {}); } catch (_) {} }
 function startRound() { resetGame(); hideOverlay(); G.paused = false; lockPointer(); }
 function resume() { G.paused = false; hideOverlay(); lockPointer(); }
+
+/* ---------- touch controls (phones / tablets) ---------- */
+const TI = { f: 0, s: 0, sprint: false, crouch: false };      // joystick forward/strafe (-1..1) and run toggle
+let touchTick = () => {};
+const doPause = () => { if (G.state === 'playing' && !G.paused) { G.paused = true; pauseScreen(); } };
+if (TOUCH) {
+  document.body.classList.add('touch');
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  const wrap = document.createElement('div'); wrap.id = 'touch';
+  wrap.innerHTML = `<div id="tzone"></div>
+    <div id="joy"><div id="knob"></div></div>
+    <div id="rotate">Rotate to landscape for a better view</div>
+    <button class="tb tsm" id="bFull" aria-label="Fullscreen">&#x26F6;</button>
+    <button class="tb tsm" id="bView" aria-label="Camera view">&#x1F441;</button>
+    <button class="tb tsm" id="bFlash" aria-label="Flashlight">&#x1F526;</button>
+    <button class="tb tsm" id="bPause" aria-label="Pause">&#x275A;&#x275A;</button>
+    <button class="tb" id="bCrouch">CROUCH</button>
+    <button class="tb" id="bSprint">RUN</button>
+    <button class="tb" id="bJump">JUMP</button>
+    <button class="tb" id="bUse">USE</button>`;
+  document.body.appendChild(wrap);
+  const zone = $('tzone'), joy = $('joy'), knob = $('knob');
+  const JR = 50, LOOK = 0.0048;
+  let joyId = null, lookId = null, jx = 0, jy = 0, lx = 0, ly = 0;
+  const moveJoy = e => {
+    const dx = e.clientX - jx, dy = e.clientY - jy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, JR / d);
+    knob.style.transform = `translate(${dx * k}px,${dy * k}px)`;
+    const mag = Math.min(1, d / JR);
+    if (mag < 0.14) { TI.f = 0; TI.s = 0; } else { TI.f = -dy * k / JR; TI.s = dx * k / JR; }
+  };
+  const resetJoy = () => { joyId = null; TI.f = 0; TI.s = 0; knob.style.transform = ''; joy.classList.remove('act'); joy.style.left = joy.style.top = joy.style.bottom = ''; };
+  zone.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (e.clientX < innerWidth * 0.5) {
+      if (joyId !== null) return;
+      joyId = e.pointerId; jx = clamp(e.clientX, 70 , innerWidth - 70); jy = clamp(e.clientY, 70, innerHeight - 70);
+      joy.style.left = jx + 'px'; joy.style.top = jy + 'px'; joy.style.bottom = 'auto'; joy.classList.add('act'); moveJoy(e);
+    } else {
+      if (lookId !== null) return;
+      lookId = e.pointerId; lx = e.clientX; ly = e.clientY;
+    }
+    try { zone.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  zone.addEventListener('pointermove', e => {
+    e.preventDefault();
+    if (e.pointerId === joyId) moveJoy(e);
+    else if (e.pointerId === lookId) {
+      G.yaw -= (e.clientX - lx) * LOOK; G.pitch = clamp(G.pitch + (e.clientY - ly) * LOOK, -1.2, 1.35);
+      lx = e.clientX; ly = e.clientY;
+    }
+  });
+  const end = e => { if (e.pointerId === joyId) resetJoy(); if (e.pointerId === lookId) lookId = null; };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end); zone.addEventListener('lostpointercapture', end);
+
+  const btn = (id, onDown, onUp) => {
+    const b = $(id);
+    b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); b.classList.add('down'); try { b.setPointerCapture(e.pointerId); } catch (_) {} onDown && onDown(b); });
+    const up = e => { e.preventDefault(); b.classList.remove('down'); onUp && onUp(b); };
+    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  };
+  btn('bUse', () => { if (G.state === 'playing' && !G.paused) interact(); });
+  btn('bJump', () => { G.jumpQ = true; });
+  btn('bSprint', b => { TI.sprint = !TI.sprint; b.classList.toggle('on', TI.sprint); });
+  btn('bCrouch', b => { TI.crouch = !TI.crouch; b.classList.toggle('on', TI.crouch); });
+  btn('bFlash', b => { flashOn = !flashOn; b.classList.toggle('on', !flashOn); });
+  btn('bView', () => { G.firstPerson = !G.firstPerson; meActor.root.visible = !G.firstPerson; });
+  btn('bPause', doPause);
+  const root = document.documentElement;
+  if (root.requestFullscreen) {
+    btn('bFull', () => {
+      if (document.fullscreenElement) { document.exitFullscreen?.(); return; }
+      root.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+    });
+  } else $('bFull').remove();   // iPhone Safari has no fullscreen API: use Share > Add to Home Screen instead
+
+  let shown = false;
+  touchTick = () => {
+    const show = G.state === 'playing' && !G.paused && $('overlay').style.display === 'none';
+    if (show !== shown) {
+      shown = show; document.body.classList.toggle('touch-on', show);
+      if (!show) { resetJoy(); lookId = null; }
+    }
+    if (show) document.body.classList.toggle('noj', !!(MP.on && MP.role === 'noobie'));
+  };
+}
+// backgrounded tab: drop held input, and pause a solo run so the clock doesn't keep going
+document.addEventListener('visibilitychange', () => { if (document.hidden) { G.keys.clear(); TI.f = TI.s = 0; if (!MP.on) doPause(); } });
 document.addEventListener('pointerlockchange', () => {
   G.locked = document.pointerLockElement === renderer.domElement;
   if (!G.locked && G.state === 'playing' && !G.paused && G.hadLock && !MP.card) { G.paused = true; pauseScreen(); }
@@ -1075,28 +1288,38 @@ function syncRoots(dt) {
   if (G.noobie.spawned && meActor !== noobieActor) { noobieActor.root.position.set(enemy.pos.x, enemy.visY, enemy.pos.z); }
 }
 
+const _tp = new THREE.Vector3();
+// can the player stand up here? true when nothing blocks the extra height between crouching and standing
+function canStand() {
+  _tp.copy(player.pos); world.resolve(_tp, player.r, player.pos.y + CFG.step, player.pos.y + BODY_H);
+  return Math.hypot(_tp.x - player.pos.x, _tp.z - player.pos.z) < 0.04;
+}
 function updatePlayer(dt) {
   const k = G.keys, N = G.noobie, isN = MP.on && MP.role === 'noobie';
   let f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
   let s = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+  f = clamp(f + TI.f, -1, 1); s = clamp(s + TI.s, -1, 1);   // touch joystick adds to the keyboard
   if (isN && N.spawned && N.wake > 0) N.wake -= dt;
   const killing = isN && N.killT > 0; if (killing) N.killT -= dt;
   const frozen = G.paused || G.t < 0 || killing || (isN && N.spawned && N.wake > 0);   // countdown, swing, or the beat after the room opens
   if (frozen) { f = 0; s = 0; }
-  const sprint = !isN && (k.has('ShiftLeft') || k.has('ShiftRight'));
-  const base = isN ? CFG.noobieSpeed : CFG.playerSpeed;
+  const wantC = !isN && !frozen && (k.has('KeyC') || TI.crouch);
+  if (wantC) G.crouching = true; else if (G.crouching && (isN || canStand())) G.crouching = false;   // stay low under a low ceiling
+  player.h = G.crouching ? CROUCH_H : BODY_H;
+  const sprint = !isN && !G.crouching && (k.has('ShiftLeft') || k.has('ShiftRight') || TI.sprint);
+  const base = (isN ? CFG.noobieSpeed : CFG.playerSpeed) * (G.crouching ? CFG.crouchSpeed : 1);
   let wx = 0, wz = 0;
   if (f || s) {
     const fx = Math.sin(G.yaw), fz = Math.cos(G.yaw), rx = -Math.cos(G.yaw), rz = Math.sin(G.yaw);
     wx = fx * f + rx * s; wz = fz * f + rz * s;
-    const l = Math.hypot(wx, wz); wx = wx / l * base * (sprint ? CFG.sprintMult : 1); wz = wz / l * base * (sprint ? CFG.sprintMult : 1);
+    const l = Math.hypot(wx, wz), mag = Math.min(1, Math.hypot(f, s)); wx = wx / l * base * mag * (sprint ? CFG.sprintMult : 1); wz = wz / l * base * mag * (sprint ? CFG.sprintMult : 1);
   }
-  player.move(wx, wz, dt, !isN && !frozen && G.jumpQ); G.jumpQ = false;
+  player.move(wx, wz, dt, !isN && !frozen && !G.crouching && G.jumpQ); G.jumpQ = false;
   if (player.pos.y < -60) { player.place(spawnPos.x, spawnPos.z, spawnPos.y); }
   if (enemy.pos.y < -60 && G.noobie.spawned && (!MP.on || MP.botHere)) enemy.place(spawnPos.x, spawnPos.z, spawnPos.y);
   if (isN) { if (!killing) meActor.play(wx || wz ? 'Walk' : 'Idle'); }
   else if (!player.onGround) meActor.play('Jump', { once: true, fade: 0.08 });
-  else if (wx || wz) meActor.play('Walk', { speed: sprint ? 1.45 : 1 });
+  else if (wx || wz) meActor.play('Walk', { speed: sprint ? 1.45 : G.crouching ? 0.6 : 1 });
   else meActor.play('Idle');
   if (wx || wz) meActor.face(wx, wz, dt);
 }
@@ -1120,6 +1343,8 @@ function update(dt) {
     if (!G.noobie.spawned && G.t >= CFG.noobieDelay) spawnNoobie();
     if (MP.botHere) updateNoobie(dt);
   }
+  G.crouchK += ((G.crouching ? 1 : 0) - G.crouchK) * Math.min(1, dt * 12);
+  meActor.crouchK = G.crouchK; meActor.root.scale.y = 1 - CFG.crouchSquash * G.crouchK;   // no crouch clip, so the body squashes down
   syncRoots(dt);
   playerActor.mixer.update(dt);
   if (G.noobie.spawned || meActor === noobieActor) noobieActor.mixer.update(dt);
@@ -1136,7 +1361,7 @@ function update(dt) {
 
 const camTarget = new THREE.Vector3(), camDir = new THREE.Vector3();
 function updateCamera() {
-  camTarget.set(player.pos.x, player.visY + BODY_H * CFG.camHeight, player.pos.z);
+  camTarget.set(player.pos.x, player.visY + BODY_H * (CFG.camHeight - CFG.crouchEye * G.crouchK), player.pos.z);
   const cp = Math.cos(G.pitch);
   camDir.set(-Math.sin(G.yaw) * cp, Math.sin(G.pitch), -Math.cos(G.yaw) * cp); // from target toward camera
   if (G.firstPerson) {
@@ -1163,19 +1388,46 @@ function updatePrompt(dt) {
   let h = pickTarget(); if (isN && h && !(h.kind === 'door' && !h.door.locked && !h.door.boards.some(b => !b.broken))) h = null;
   let txt = h ? promptFor(h) : '';
   if (!h && !isN && nearBridge()) txt = inv.plank ? 'Lay the plank across the gap' : 'The floor is gone here. A plank would reach across.';
-  p.style.display = txt ? 'block' : 'none'; p.textContent = txt ? '[E] ' + txt : '';
+  p.style.display = txt ? 'block' : 'none'; p.textContent = txt ? (TOUCH ? 'USE: ' : '[E] ') + txt : '';
+}
+
+
+/* ---------- main menu music ---------- */
+// Browsers block audio until the person interacts, so it starts on the first tap / click / key press on the menu,
+// loops while G.state === 'menu' (main menu, multiplayer menu, lobby), and fades out when a round begins.
+const menuMusic = new Audio(CFG.menuMusic);
+menuMusic.loop = true; menuMusic.preload = 'auto'; menuMusic.volume = 0;
+let musicUnlocked = false, musicBroken = false, musicVol = 0;
+menuMusic.addEventListener('error', () => { musicBroken = true; console.warn('Menu music could not be loaded:', CFG.menuMusic); });
+function musicPlay() {
+  if (musicBroken || !menuMusic.paused) return;
+  const p = menuMusic.play();
+  p?.catch?.(err => { if (err && err.name === 'NotAllowedError') musicUnlocked = false; else musicBroken = true; });
+}
+function unlockMusic() {
+  musicUnlocked = true;
+  if (G.state === 'menu') musicPlay();   // called straight from the gesture so iOS allows it
+}
+for (const ev of ['pointerdown', 'touchend', 'keydown', 'click']) addEventListener(ev, unlockMusic, { capture: true, passive: true });
+function musicTick(dt) {
+  const want = G.state === 'menu' && musicUnlocked && !document.hidden;
+  if (want) { musicPlay(); musicVol = Math.min(CFG.menuMusicVolume, musicVol + dt * 0.6); }
+  else { musicVol = Math.max(0, musicVol - dt * 1.5); if (musicVol === 0 && !menuMusic.paused) menuMusic.pause(); }
+  menuMusic.volume = musicVol;
 }
 
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   if (window.__freeze) return;
+  touchTick();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  musicTick(dt);
   if (G.state === 'menu') { menuMixer.update(dt); renderer.render(menuScene, menuCam); return; }
   if (!G.paused || MP.on) update(dt);
   updateCamera();
   updatePrompt(dt);
-  lantern.position.set(player.pos.x, player.visY + BODY_H * 0.9, player.pos.z);
+  lantern.position.set(player.pos.x, player.visY + BODY_H * (0.9 - CFG.crouchEye * G.crouchK), player.pos.z);
   // subtle flashlight flicker, a harder stutter while Noobie hunts
   const hunt = G.noobie.spawned ? 1 : 0.35, t = now / 1000;
   const fl = 1 - hunt * 0.10 * Math.max(0, Math.sin(t * 23) * Math.sin(t * 7.3)) - (Math.random() < 0.004 * hunt ? 0.55 : 0);
@@ -1199,7 +1451,7 @@ const menuCam = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 
 const menuMixer = new THREE.AnimationMixer(gMenu.scene);
 { const idle = gMenu.animations.find(a => a.name === 'Idle') || gMenu.animations[0]; if (idle) menuMixer.clipAction(idle).play(); }
 function fitMenuCam() {
-  const w = innerWidth, h = innerHeight; menuCam.aspect = w / h;
+  const w = innerWidth, h = innerHeight; menuCam.aspect = w / h; menuCam.fov = w < h ? Math.min(95, 55 + (1 - w / h) * 45) : 55;
   if (w > h * 1.15) menuCam.setViewOffset(w, h, -w * 0.13, 0, w, h); else menuCam.clearViewOffset();   // landscape: Noobie sits right of the buttons
   menuCam.updateProjectionMatrix();
 }
@@ -1365,7 +1617,7 @@ function mpStartRound(meta) {
   MP.roundUnsub.push(D.onChildAdded(rref('pos'), s => mpPos(s.key, s.val())));
   MP.roundUnsub.push(D.onChildChanged(rref('pos'), s => mpPos(s.key, s.val())));
   lockPointer();
-  setTimeout(() => { if (MP.on && !G.locked) toast('Click the game to capture the mouse', '#fff', 3000); }, 500);
+  setTimeout(() => { if (MP.on && !G.locked && !TOUCH) toast('Click the game to capture the mouse', '#fff', 3000); }, 500);
 }
 function mpClearRound() {
   for (const u of MP.roundUnsub.splice(0)) { try { u(); } catch (_) {} }
@@ -1382,6 +1634,7 @@ function mpEvent(e) {
   MP.applying = true;   // net() ignores anything we do while applying someone else's action
   try {
     if (e.type === 'pickup') { const it = items.find(i => i.group === e.id); if (it) dropItem(it); }
+    else if (e.type === 'drop') { if (!items.some(i => i.group === e.id)) placeItem(e.itype, e.id, e.color || null, +e.x, +e.s, +e.z, true); }
     else if (e.type === 'door') { const d = doors[+e.id]; if (d) { if (e.o && d.state === 'closed') toggleDoor(d); else if (!e.o && d.state === 'open') toggleDoor(d); } }
     else if (e.type === 'unlock') { const d = doors[+e.id]; if (d && d.locked) { d.locked = false; d.locks.forEach(l => (l.visible = false)); sfx('unlock'); } }
     else if (e.type === 'board') { const b = boards[+e.id]; if (b && !b.broken) breakBoard(b); }
@@ -1422,10 +1675,10 @@ function mpPos(key, v) {
     }
     MP.remote[key] = r;
   }
-  r.tx = v.x; r.ty = v.y; r.tz = v.z; r.th = v.h; r.a = v.a; r.s = v.s;
+  r.tx = v.x; r.ty = v.y; r.tz = v.z; r.th = v.h; r.a = v.a; r.s = v.s; r.c = v.c || 0;
 }
 function packState(p, actor) {
-  return { x: r2(p.x), y: r2(p.y), z: r2(p.z), h: r2(actor.heading), a: actor.cur || 'Idle', s: r2(actor.actions[actor.cur]?.timeScale ?? 1) };
+  return { x: r2(p.x), y: r2(p.y), z: r2(p.z), h: r2(actor.heading), c: r2(actor.crouchK || 0), a: actor.cur || 'Idle', s: r2(actor.actions[actor.cur]?.timeScale ?? 1) };
 }
 function mpTick(dt) {
   if (!MP.on) return;
@@ -1444,6 +1697,7 @@ function mpTick(dt) {
       act.root.visible = r.pos.y < CFG.roomY - 100;
       act.play(r.a, { once: r.a === 'Kill', fade: 0.12, speed: r.s || 1 });
     } else {
+      r.ck = (r.ck || 0) + ((r.c || 0) - (r.ck || 0)) * k; act.root.scale.y = 1 - CFG.crouchSquash * r.ck;
       act.root.position.copy(r.pos); act.root.rotation.y = r.hd; act.root.rotation.x = r.fallen ? -Math.PI / 2 * 0.98 : 0;
       act.play(r.a, { once: r.a === 'Jump', fade: 0.1, speed: r.s || 1 });
       act.mixer.update(dt);
