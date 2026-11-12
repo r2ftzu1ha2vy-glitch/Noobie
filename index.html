@@ -263,7 +263,7 @@ const CFG = {
   menuMusicVolume: 0.5,
   thudSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // played when the player lands after falling into the hole
   batSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // the hit sound after "What Was That?" (empty = built-in synth squeaks)
-  doorOpenDeg: 80,             // how far doors swing open (90 = flat against the wall; lower keeps them nearer the doorway)
+  doorOpenDeg: 90,             // doors always swing a full 90 degrees: rotate 90, and the hinge edge makes the door slide half its width sideways and half its width out, so it ends flat against the opening
   fallDeathDrop: 6,            // falling this far below the 3rd-floor edge kills the player
   spawnName: 'Spawn',
   doorName: 'Door',            // exact node name that can be clicked open
@@ -795,7 +795,8 @@ for (const lm of lockMeshes) {
 // boards that cover a door (the front door) must be smashed before it can be opened
 for (const d of doors) for (const b of boards) if (new THREE.Box3(d.closedCol.min, d.closedCol.max).expandByScalar(1.2).intersectsBox(b.box)) d.boards.push(b);
 
-// plain + coloured doors: pick hinge + swing direction + swing angle so the open door never pokes into a wall.
+// plain + coloured doors: pick the hinge end + swing direction (always a full 90 degrees) that touches the walls the least.
+// Rotating 90 degrees about an end of the door is the same as: rotate about its centre, then move half its width along the wall and half its width out of the wall.
 // The walls in this map are paper thin, so the swung door is tested against them with a margin (a plain point-in-box test never hits them).
 const _dp = new THREE.Vector3();
 function nearBox(c, p, m) {
@@ -824,12 +825,7 @@ for (const d of doors) {
     const hinge = hingeAt(hs), hits = swingHits(C, alongX, mid, half, hinge, sg * full);
     if (!best || hits < best.hits) best = { hs, sg, hinge, hits };
   }
-  let ang = best.sg * full;
-  if (best.hits > 0) {   // still touching something: open less, as far as it can go without touching
-    let bestDeg = null, bestHits = best.hits;
-    for (const deg of [70, 60, 50, 40, 30]) { const h = swingHits(C, alongX, mid, half, best.hinge, best.sg * deg * Math.PI / 180); if (h < bestHits) { bestHits = h; bestDeg = deg; } if (h === 0) break; }
-    if (bestDeg) ang = best.sg * bestDeg * Math.PI / 180;
-  }
+  const ang = best.sg * full;   // never a smaller angle: the door always ends up exactly 90 degrees open
   const P = new THREE.Matrix4().makeTranslation(best.hinge.x, 0, best.hinge.z).multiply(new THREE.Matrix4().makeRotationY(ang)).multiply(new THREE.Matrix4().makeTranslation(-best.hinge.x, 0, -best.hinge.z));
   d.openCol = new Collider(C.lo, C.hi, P.clone().multiply(C.M)); d.angle = ang; d.hinge.copy(best.hinge);
   d.openCol.enabled = false;
@@ -1313,7 +1309,8 @@ function win() {
   const coins = awardCoins(CFG.escapeReward);
   if (coins) toast(`+${coins} NoobieCoins`, '#ffcf5a', 2600);
   const extra = coins ? `<br><span style="color:#ffcf5a">+${coins} NoobieCoins</span>` : (isAccount() ? '' : '<br><span style="color:#9aa;font-size:14px">Sign in to earn NoobieCoins.</span>');
-  endScreen('You escaped!', `You got out of the house in <b>${fmtExact(G.t)}</b>.${extra}`);
+  const time = fmtExact(G.t);   // the clock stops here, before the ending plays
+  beginEndCutscene(() => endScreen('You escaped!', `You got out of the house in <b>${time}</b>.${extra}`));
 }
 const fmtExact = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
@@ -1351,10 +1348,12 @@ function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">${TOUCH ? 
 /* ---------- cutscene ---------- */
 // Camera 1 -> "I Wonder How Noobie Is Doing" / "He Hasn't Gone To School For Awhile" -> bush rustle -> Camera 2 -> "What Was That?" -> black -> game.
 // Everything it needs is marked in House_Map.glb: Cutscene_Spawn, Cutscene_Camera1, Cutscene_Camera2 (and Player_Spawn for where the round starts).
-const CUT = { tok: 0, active: false, skip: false, cam: 1, turn: false, blend: 0, moving: false };
+const CUT = { tok: 0, active: false, skip: false, cam: 1, turn: false, blend: 0, moving: false, end: false, walk: 0 };
 const CUT_MOVE_S = 1.8;   // seconds the camera takes to glide from shot 1 to shot 2
 const CUT_LINES_A = ['I Wonder How Noobie Is Doing', "He Hasn't Gone To School For Awhile"];
 const CUT_LINE_B = 'What Was That?';
+const CUT_END_LINES = ['That Is Not The Noobie I Remember', 'Gotta Go Tell The Officers'];   // after escaping
+const CUT_END_WALK = 10, CUT_END_WALK_S = 2.8;   // the player walks this many units forward (in this many seconds) while the screen fades to black
 const MP_LEAD_MS = 17000;   // multiplayer: how long after Start the clock begins (the cutscene runs inside this)
 const cutActor = new Actor({ scene: SkeletonUtils.clone(gPlayer.scene), animations: gPlayer.animations });
 cutActor.root.visible = false; scene.add(cutActor.root);
@@ -1363,7 +1362,7 @@ const dlg = text => { $('dlgText').textContent = text; $('dialogue').classList.t
 $('cutSkip').addEventListener('click', e => { e.stopPropagation(); CUT.skip = true; });
 $('cutSkip').addEventListener('touchend', e => { e.stopPropagation(); CUT.skip = true; }, { passive: true });
 function cutCleanup() {
-  CUT.active = false; CUT.skip = false; CUT.turn = false;
+  CUT.active = false; CUT.skip = false; CUT.turn = false; CUT.end = false; CUT.walk = 0;
   document.body.classList.remove('cutscene'); cutActor.root.visible = false; dlg(''); setFade(0, 0);
 }
 let spawnLineT = 0;
@@ -1413,9 +1412,60 @@ async function runCutscene(tok, onDone) {
   await wait(50, true); setFade(0, 900);
   spawnLine('Gotta Get Outta Here');
 }
+// the ending: the player stands where the intro began, turned away from the house, camera 1 stays put and watches; two lines, then he walks off as the screen goes black
+function beginEndCutscene(onDone) {
+  if (!HAS_CUTSCENE) { onDone(); return; }
+  const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false; CUT.blend = 0; CUT.moving = false; CUT.end = true; CUT.walk = 0;
+  G.state = 'cutscene'; document.body.classList.add('cutscene');
+  playerActor.root.visible = false;
+  const p = cutSpawnPos, g = world.groundAt(p.x, p.z, p.y + CFG.step + 0.5);
+  cutActor.root.position.set(p.x, isFinite(g) ? g : p.y, p.z);
+  cutActor.root.rotation.set(0, 0, 0); cutActor.root.scale.set(1, 1, 1);
+  const gc = goldDoor ? new THREE.Vector3().addVectors(goldDoor.closedCol.min, goldDoor.closedCol.max).multiplyScalar(0.5) : cutCam1Pos;
+  cutActor.heading = Math.atan2(gc.x - p.x, gc.z - p.z) + Math.PI; cutActor.root.rotation.y = cutActor.heading;   // looking the opposite way from the house
+  cutActor.root.visible = true; cutActor.cur = null; cutActor.play('Idle');
+  runEndCutscene(tok, onDone);
+}
+async function runEndCutscene(tok, onDone) {
+  const alive = () => CUT.tok === tok && CUT.active, stop = () => !alive() || CUT.skip;
+  const wait = (ms, ignoreSkip = false) => new Promise(res => {
+    const t0 = performance.now(), iv = setInterval(() => { if (!alive() || (!ignoreSkip && CUT.skip) || performance.now() - t0 >= ms) { clearInterval(iv); res(); } }, 30);
+  });
+  const say = async (text, hold = 1500) => {
+    for (let i = 1; i <= text.length && !stop(); i++) { dlg(text.slice(0, i)); await wait(38); }
+    if (alive()) dlg(text);
+    await wait(hold);
+  };
+  setFade(1, 0); await wait(60, true); if (!alive()) return; setFade(0, 800);
+  await wait(900);
+  for (const line of CUT_END_LINES) { if (stop()) break; await say(line); }
+  if (!alive()) return;
+  dlg('');
+  if (!CUT.skip) {   // walk forward while the black fades in
+    CUT.walk = CUT_END_WALK_S; cutActor.play('Walk'); setFade(1, CUT_END_WALK_S * 900);
+    await wait(CUT_END_WALK_S * 1000 + 300);
+    if (!alive()) return;
+  }
+  setFade(1, 0);
+  cutCleanup(); setFade(1, 0);                         // stay black while the result screen comes up
+  playerActor.root.visible = !G.firstPerson;
+  G.state = 'won';
+  onDone();
+  setTimeout(() => setFade(0, 800), 1100);
+}
 const _ct = new THREE.Vector3();
 function updateCutsceneCamera(dt) {
   cutActor.mixer.update(dt);
+  if (CUT.end) {   // ending: camera 1 stays where it is and just watches the player walk away
+    if (CUT.walk > 0) {
+      const sp = CUT_END_WALK / CUT_END_WALK_S * Math.min(dt, CUT.walk), h = cutActor.heading, q = cutActor.root.position;
+      q.x += Math.sin(h) * sp; q.z += Math.cos(h) * sp;
+      const g = world.groundAt(q.x, q.z, q.y + CFG.step + 0.5); if (isFinite(g)) q.y = g;
+      CUT.walk -= dt;
+    }
+    camera.position.copy(cutCam1Pos); _ct.set(cutActor.root.position.x, cutActor.root.position.y + BODY_H * 0.8, cutActor.root.position.z); camera.lookAt(_ct);
+    return;
+  }
   const r = cutActor.root.position;
   if (CUT.moving) CUT.blend = Math.min(1, CUT.blend + dt / CUT_MOVE_S);
   if (CUT.skip) CUT.blend = CUT.moving ? 1 : CUT.blend;
