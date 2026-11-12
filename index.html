@@ -816,8 +816,9 @@ function swingHits(C, alongX, mid, half, hinge, ang) {   // how many sample poin
   return hits;
 }
 for (const d of doors) {
-  const C = d.closedCol, size = C.max.clone().sub(C.min), alongX = size.x > size.z;
-  const mid = C.min.clone().add(C.max).multiplyScalar(0.5), half = (alongX ? size.x : size.z) / 2;
+  const C = d.closedCol, real = new THREE.Box3().setFromPoints(C.corners);   // the door's real bounds: C.min / C.max are padded by ~3.6 units, which put the hinge in mid-air beside the door
+  const size = real.max.clone().sub(real.min), alongX = size.x > size.z;
+  const mid = real.min.clone().add(real.max).multiplyScalar(0.5), half = (alongX ? size.x : size.z) / 2;
   const hingeAt = hs => { const h = mid.clone(); if (alongX) h.x += hs * half; else h.z += hs * half; return h; };
   const full = CFG.doorOpenDeg * Math.PI / 180;
   let best = null;
@@ -1415,7 +1416,7 @@ async function runCutscene(tok, onDone) {
 // the ending: the player stands where the intro began, turned away from the house, camera 1 stays put and watches; two lines, then he walks off as the screen goes black
 function beginEndCutscene(onDone) {
   if (!HAS_CUTSCENE) { onDone(); return; }
-  const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false; CUT.blend = 0; CUT.moving = false; CUT.end = true; CUT.walk = 0;
+  const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false; CUT.blend = 0; CUT.moving = false; CUT.end = true; CUT.walk = 0; CUT.aim = null;
   G.state = 'cutscene'; document.body.classList.add('cutscene');
   playerActor.root.visible = false;
   const p = cutSpawnPos, g = world.groundAt(p.x, p.z, p.y + CFG.step + 0.5);
@@ -1463,7 +1464,11 @@ function updateCutsceneCamera(dt) {
       const g = world.groundAt(q.x, q.z, q.y + CFG.step + 0.5); if (isFinite(g)) q.y = g;
       CUT.walk -= dt;
     }
-    camera.position.copy(cutCam1Pos); _ct.set(cutActor.root.position.x, cutActor.root.position.y + BODY_H * 0.8, cutActor.root.position.z); camera.lookAt(_ct);
+    camera.position.copy(cutCam1Pos);
+    if (Math.hypot(cutActor.root.position.x - cutCam1Pos.x, cutActor.root.position.z - cutCam1Pos.z) > 4 || !CUT.aim) {   // follow him with the lens, but stop turning once he is right next to the camera
+      CUT.aim = (CUT.aim || new THREE.Vector3()).set(cutActor.root.position.x, cutActor.root.position.y + BODY_H * 0.8, cutActor.root.position.z);
+    }
+    camera.lookAt(CUT.aim);
     return;
   }
   const r = cutActor.root.position;
@@ -2600,7 +2605,7 @@ window.__game = {
   interact, pickUp, unlockDoor, breakBoard, placeBridge, useGenerator, nearBridge, populateItems, spawnItem, bridgeA, bridgeB,
   advance(sec, step = 1 / 60) { for (let t = 0; t < sec; t += step) update(step); updateCamera(); },
   start() { resetGame(); hideOverlay(); },
-  toggleDoor, pickDoor, pickTarget, ray, mouse, spawnPos, renderFrame() { updateCamera(); renderer.render(scene, camera); },
+  win, beginEndCutscene, CUT, cutActor, toggleDoor, pickDoor, pickTarget, ray, mouse, spawnPos, renderFrame() { updateCamera(); renderer.render(scene, camera); },
 };
 
 $('loading').remove();
