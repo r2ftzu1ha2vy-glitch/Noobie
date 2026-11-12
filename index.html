@@ -4,8 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Noobie House</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light+Two&display=swap" rel="stylesheet">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;user-select:none}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Shadows Into Light Two",cursive,system-ui,sans-serif;color:#fff;user-select:none}
+  button,input,kbd{font-family:inherit}
   canvas{display:block}
   #hud{position:fixed;top:14px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;z-index:5}
   #timer{font-size:40px;font-weight:700;letter-spacing:2px;font-variant-numeric:tabular-nums;padding:4px 22px;border-radius:12px;background:rgba(0,0,0,.55);text-shadow:0 2px 6px rgba(0,0,0,.6)}
@@ -62,7 +66,8 @@ const CFG = {
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
   spawnName: 'Spawn',
   doorName: 'Door',            // exact node name that can be clicked open
-  noobieDelay: 45,             // Noobie spawns after this many seconds
+  noobieDelay: 30,             // Noobie spawns after this many seconds
+  timeLimit: 600,              // round length in seconds; the timer counts down from this
   noobieWake: 1.0,             // idle time right after Noobie spawns
   noobieOpensDoors: true,      // true = Noobie may open closed doors that block his path
   charScale: 2.5,              // models are ~1.6 tall; map is built bigger
@@ -70,7 +75,7 @@ const CFG = {
   step: 2.2,                   // max step-up height (the staircase risers are ~2.0-2.1 tall)
   drop: 2.5,                   // max drop Noobie will path across
   gravity: 70, jump: 22,
-  playerSpeed: 13, sprintMult: 1.45, noobieSpeed: 11.5,
+  playerSpeed: 12, sprintMult: 1.45, noobieSpeed: 9,
   catchDist: 2.4,
   navCell: 1.0, navPad: 0.3, repath: 0.25,
   doorReach: 16, itemReach: 15, doorTime: 0.6, batteriesNeeded: 3,
@@ -684,7 +689,7 @@ function spawnItem(spot, pop = false) {
   const g = new THREE.Group(); g.add(proto.obj.clone(true));
   const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), new THREE.MeshBasicMaterial()); hit.visible = false; g.add(hit);   // generous invisible click target
   const cx = (spot.box.min.x + spot.box.max.x) / 2, cz = (spot.box.min.z + spot.box.max.z) / 2, gy = world.groundAt(cx, cz, spot.box.max.y + 0.5);
-  const base = Math.max(isFinite(gy) ? gy : -Infinity, spot.box.min.y) + 0.8;
+  const base = Math.max(isFinite(gy) ? gy : -Infinity, spot.box.min.y) + proto.size.y / 2;   // model is centred on its origin: half its height puts the underside on the surface
   g.position.set(cx, base, cz);
   const it = { type: spot.type, color: spot.color || null, obj: g, base, phase: Math.random() * 6.28, hit, pop: pop ? 0 : 1 };
   hit.userData.item = it; scene.add(g); items.push(it); itemHits.push(hit);
@@ -745,7 +750,7 @@ function updateItems(dt) {
   const t = G.t;
   for (const it of items) {
     it.pop = Math.min(1, it.pop + dt * 1.6); const k = it.pop < 1 ? 1 - Math.pow(1 - it.pop, 3) : 1;
-    it.obj.scale.setScalar(Math.max(0.001, k)); it.obj.position.y = it.base + Math.sin(t * 2.2 + it.phase) * 0.14 + (1 - k) * 2; it.obj.rotation.y += dt * 1.3;
+    it.obj.scale.setScalar(Math.max(0.001, k)); it.obj.position.y = it.base + (1 - k) * 2;
   }
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i]; f.t += dt; f.vel.y -= 40 * dt;
@@ -914,7 +919,7 @@ function updateNoobie(dt) {
   if (N.nudge > 0) { N.nudge -= dt; wx += N.nudgeDir.x * CFG.noobieSpeed * 0.8; wz += N.nudgeDir.y * CFG.noobieSpeed * 0.8; }
   enemy.move(wx, wz, dt);
   const moving = Math.hypot(wx, wz) > 0.5;
-  noobieActor.play(moving ? 'Walk' : 'Idle', { speed: moving ? 1.3 : 1 });
+  noobieActor.play(moving ? 'Walk' : 'Idle', { speed: 1 });
   if (moving) noobieActor.face(wx, wz, dt, 12);
   // catch
   if (G.state === 'playing' && Math.hypot(target.pos.x - enemy.pos.x, target.pos.z - enemy.pos.z) < CFG.catchDist && Math.abs(target.pos.y - enemy.pos.y) < BODY_H * 0.8) lose();
@@ -935,6 +940,11 @@ function lose() {
   playerActor.play('Idle');
   endScreen('Noobie got you', `You lasted <b>${fmtExact(G.t)}</b> in the house.`);
 }
+function timeUp() {
+  G.state = 'lost'; G.killTimer = 0;   // killing stays false: no Noobie attack, no topple
+  playerActor.play('Idle');
+  endScreen("Time's up", `You didn't get out of the house in <b>${fmt(CFG.timeLimit)}</b>.`);
+}
 function win() {
   G.state = 'won';
   endScreen('You escaped!', `You got out of the house in <b>${fmtExact(G.t)}</b>.`);
@@ -952,7 +962,7 @@ function hideOverlay() { $('overlay').style.display = 'none'; }
 function startScreen() {
   showOverlay(`<h1>Noobie House</h1>
     <p>Get out through the <b style="color:#ffcf5a">gold front door</b>: find its key, smash the boards nailed across it with a hammer, and walk out.
-       Noobie wakes up after <b>${CFG.noobieDelay}s</b> and hunts you.</p>
+       You have <b>${fmt(CFG.timeLimit)}</b> to get out. Noobie wakes up after <b>${CFG.noobieDelay}s</b> and hunts you.</p>
     <p style="font-size:14px;color:#9aa">Coloured doors need the key of their colour. Three batteries start the generator, which drops the pink key.
        A plank can bridge the hole on the top floor. Items are in a random spot every run.</p>
     <p><kbd>W A S D</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump<br>
@@ -1035,16 +1045,18 @@ function update(dt) {
     updatePlayer(dt); updateItems(dt);
     if (!G.noobie.spawned && G.t >= CFG.noobieDelay) spawnNoobie();
     updateNoobie(dt);
+    if (G.state === 'playing' && G.t >= CFG.timeLimit) timeUp();
     if (G.state === 'playing' && goldDoor && !goldDoor.locked && (player.pos.z - doorZ) * exitDir > 1.8) win();   // walked out through the front door
   } else if (G.state === 'lost') {
     G.killTimer += dt; updateDoors(dt); updateItems(dt);
-    const k = Math.min(1, G.killTimer / 0.45); playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
+    const k = G.noobie.killing ? Math.min(1, G.killTimer / 0.45) : 0; playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
   } else { updateDoors(dt); }
   syncRoots(dt);
   playerActor.mixer.update(dt);
   if (G.noobie.spawned) noobieActor.mixer.update(dt);
   // HUD
-  $('timer').textContent = fmt(G.state === 'ready' ? 0 : G.t);
+  const left = G.state === 'ready' ? CFG.timeLimit : Math.max(0, CFG.timeLimit - G.t);
+  $('timer').textContent = fmt(left); $('timer').classList.toggle('low', G.state !== 'ready' && left <= 60);
   const sub = $('sub');
   if (G.state === 'ready') sub.textContent = '';
   else if (!G.noobie.spawned) { sub.textContent = 'Noobie wakes in ' + fmt(CFG.noobieDelay - G.t); sub.classList.remove('hunt'); }
