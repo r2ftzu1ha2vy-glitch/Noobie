@@ -221,6 +221,9 @@ const CFG = {
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
   menuMusic: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/u_p5wfvlgzy6-horror-main-menu-385962.mp3',   // or a local file next to index.html
   menuMusicVolume: 0.5,
+  thudSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // played when the player lands after falling into the hole
+  batSound: '',                // cutscene bat sound: put a file name / URL here (e.g. 'Bat.mp3'); empty = built-in synth squeaks
+  fallDeathDrop: 6,            // falling this far below the 3rd-floor edge kills the player
   spawnName: 'Spawn',
   doorName: 'Door',            // exact node name that can be clicked open
   noobieDelay: 30,             // Noobie spawns after this many seconds
@@ -863,6 +866,20 @@ function sfx(k) {
   else if (k === 'gen') { const a = ac(); if (!a) return; stopHum(); const o = a.createOscillator(), l = a.createOscillator(), lg = a.createGain(), g = a.createGain();
     o.type = 'sawtooth'; o.frequency.value = 46; l.frequency.value = 7; lg.gain.value = 5; l.connect(lg).connect(o.frequency); g.gain.value = 0.05; o.connect(g).connect(a.destination); o.start(); l.start(); humNode = { o, l }; noise(.8, 400, .5); }
 }
+const thudAudio = new Audio(CFG.thudSound); thudAudio.preload = 'auto';
+const batAudio = CFG.batSound ? new Audio(CFG.batSound) : null; if (batAudio) batAudio.preload = 'auto';
+function playThud() { try { thudAudio.currentTime = 0; thudAudio.play()?.catch?.(() => { noise(.4, 700, .6); tone(60, .35, 'sawtooth', .25); }); } catch (_) {} }
+function playBat() {
+  if (batAudio) { try { batAudio.currentTime = 0; batAudio.play()?.catch?.(() => {}); return; } catch (_) {} }
+  const a = ac(); if (!a) return;   // fallback synth: three quick high squeaks + wing flutter
+  for (let i = 0; i < 3; i++) {
+    const t = a.currentTime + i * 0.17, o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(5200 + i * 300, t); o.frequency.exponentialRampToValueAtTime(8200, t + 0.09);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.1, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.14);
+  }
+  noise(.7, 2500, .12);
+}
 function stopHum() { try { humNode?.o.stop(); humNode?.l.stop(); } catch (_) {} humNode = null; }
 
 // -- models
@@ -1020,7 +1037,7 @@ function resetGame(o = {}) {
   populateItems(o.seed != null ? mulberry32(o.seed) : Math.random); renderInv();
   meActor = o.role === 'noobie' ? noobieActor : playerActor;
   if (o.role === 'noobie') player.place(roomSpawn.x, roomSpawn.z, roomSpawn.y); else player.place(playerSpawnPos.x, playerSpawnPos.z, playerSpawnPos.y);
-  G.yaw = 0; G.pitch = 0.45; G.toppled = false;
+  G.yaw = 0; G.pitch = 0.45; G.toppled = false; G.fallDeath = false; G.thudded = false; G.edgeY = null;
   for (const a of [playerActor, noobieActor]) { a.root.rotation.set(0, 0, 0); a.root.scale.y = 1; a.heading = 0; }
   playerActor.root.visible = meActor === playerActor && !G.firstPerson;
   Object.assign(G.noobie, { spawned: false, wake: 0, path: [], pi: 0, repath: 0, goal: null, killing: false, stuckT: 0, goalReached: false, nudge: 0, killT: 0, grace: 0 });
@@ -1269,7 +1286,14 @@ function cutCleanup() {
   CUT.active = false; CUT.skip = false; CUT.turn = false;
   document.body.classList.remove('cutscene'); cutActor.root.visible = false; dlg(''); setFade(0, 0);
 }
-function cancelCutscene() { if (CUT.active) { CUT.tok++; cutCleanup(); } }
+let spawnLineT = 0;
+function spawnLine(text) {   // the player's first words when the round starts
+  clearTimeout(spawnLineT); let i = 0;
+  const tick = () => { if (G.state === 'menu') { dlg(''); return; } i++; dlg(text.slice(0, i)); spawnLineT = setTimeout(i < text.length ? tick : () => dlg(''), i < text.length ? 38 : 2600); };
+  spawnLineT = setTimeout(tick, 500);
+}
+function cancelCutscene() { clearTimeout(spawnLineT); if (!CUT.active) dlg('');
+  if (CUT.active) { CUT.tok++; cutCleanup(); } }
 function beginCutscene(onDone) {
   if (!HAS_CUTSCENE) { onDone(); return; }
   const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false;
@@ -1278,7 +1302,8 @@ function beginCutscene(onDone) {
   const p = cutSpawnPos, g = world.groundAt(p.x, p.z, p.y + CFG.step + 0.5);
   cutActor.root.position.set(p.x, isFinite(g) ? g : p.y, p.z);
   cutActor.root.rotation.set(0, 0, 0); cutActor.root.scale.set(1, 1, 1);
-  cutActor.heading = Math.atan2(cutCam1Pos.x - p.x, cutCam1Pos.z - p.z); cutActor.root.rotation.y = cutActor.heading;   // starts out facing the first camera
+  const gc = goldDoor ? new THREE.Vector3().addVectors(goldDoor.closedCol.min, goldDoor.closedCol.max).multiplyScalar(0.5) : cutCam1Pos;
+  cutActor.heading = Math.atan2(gc.x - p.x, gc.z - p.z); cutActor.root.rotation.y = cutActor.heading;   // the player always looks at the gold door; only the cameras move
   cutActor.root.visible = true; cutActor.cur = null; cutActor.play('Idle');
   runCutscene(tok, onDone);
 }
@@ -1296,21 +1321,22 @@ async function runCutscene(tok, onDone) {
   await wait(900);                                              // establishing shot, camera 1
   for (const line of CUT_LINES_A) { if (stop()) break; await say(line); }
   if (!stop()) { dlg(''); await wait(600); }
-  if (!stop()) { sfx('bush'); CUT.turn = true; await wait(450); }   // rustle: he turns toward the sound
+  if (!stop()) { sfx('bush'); await wait(450); }                    // rustle
   if (!stop()) { CUT.cam = 2; await wait(900); }                    // cut to camera 2
-  if (!stop()) await say(CUT_LINE_B, 1600);
+  if (!stop()) await say(CUT_LINE_B, 900);
+  if (!stop()) { dlg(''); playBat(); await wait(1700); }            // then the bat sound
   if (!alive()) return;
   dlg(''); setFade(1, CUT.skip ? 250 : 800);                      // black screen
   await wait(CUT.skip ? 300 : 1400, true);
   if (!alive()) return;
   cutCleanup(); onDone();                                         // game starts while the screen is still black
   await wait(50, true); setFade(0, 900);
+  spawnLine('Gotta Get Outta Here');
 }
 const _ct = new THREE.Vector3();
 function updateCutsceneCamera(dt) {
   cutActor.mixer.update(dt);
   const r = cutActor.root.position;
-  if (CUT.turn) cutActor.face(cutCam2Pos.x - r.x, cutCam2Pos.z - r.z, dt, 5);
   camera.position.copy(CUT.cam === 2 ? cutCam2Pos : cutCam1Pos);
   _ct.set(r.x, r.y + BODY_H * 0.8, r.z); camera.lookAt(_ct);     // both cameras look at the player
 }
@@ -1458,6 +1484,21 @@ function canStand() {
   _tp.copy(player.pos); world.resolve(_tp, player.r, player.pos.y + CFG.step, player.pos.y + BODY_H);
   return Math.hypot(_tp.x - player.pos.x, _tp.z - player.pos.z) < 0.04;
 }
+// the third-floor hole between Plank_Start and Plank_End: fall far enough from its edge and you die
+function checkGapFall() {
+  if (!bridgeA || !bridgeB) return;
+  const topY = Math.min(bridgeA.y, bridgeB.y), P = player.pos;
+  if (player.onGround) {
+    const dx = bridgeB.x - bridgeA.x, dz = bridgeB.z - bridgeA.z, L2 = dx * dx + dz * dz || 1;
+    const t = clamp(((P.x - bridgeA.x) * dx + (P.z - bridgeA.z) * dz) / L2, 0, 1);
+    const near = Math.hypot(P.x - (bridgeA.x + dx * t), P.z - (bridgeA.z + dz * t)) < 10;
+    G.edgeY = near && P.y >= topY - 1.5 ? P.y : null;
+  } else if (G.edgeY != null && P.y < G.edgeY - CFG.fallDeathDrop) gapDeath();
+}
+function gapDeath() {
+  G.state = 'lost'; G.fallDeath = true; G.thudded = false; G.edgeY = null; G.killTimer = 0; G.toppled = false;
+  markOut('caught'); playerActor.play('Jump', { once: true, fade: 0.08 });
+}
 function updatePlayer(dt) {
   const k = G.keys, N = G.noobie, isN = MP.on && MP.role === 'noobie';
   let f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
@@ -1479,6 +1520,7 @@ function updatePlayer(dt) {
     const l = Math.hypot(wx, wz), mag = Math.min(1, Math.hypot(f, s)); wx = wx / l * base * mag * (sprint ? CFG.sprintMult : 1); wz = wz / l * base * mag * (sprint ? CFG.sprintMult : 1);
   }
   player.move(wx, wz, dt, !isN && !frozen && !G.crouching && G.jumpQ); G.jumpQ = false;
+  if (!isN && G.state === 'playing') checkGapFall();
   if (player.pos.y < -60) { const sp = isN ? spawnPos : playerSpawnPos; player.place(sp.x, sp.z, sp.y); }
   if (enemy.pos.y < -60 && G.noobie.spawned && (!MP.on || MP.botHere)) enemy.place(spawnPos.x, spawnPos.z, spawnPos.y);
   if (isN) { if (!killing) meActor.play(wx || wz ? 'Walk' : 'Idle'); }
@@ -1500,6 +1542,10 @@ function update(dt) {
     if (G.state === 'playing' && G.t >= CFG.timeLimit && MP.role !== 'noobie') timeUp();
     if (G.state === 'playing' && MP.role !== 'noobie' && goldDoor && !goldDoor.locked && (player.pos.z - doorZ) * exitDir > 1.8) win();   // walked out through the front door
   } else if (G.state === 'lost') {
+    if (G.fallDeath) {   // keep falling, then land with a thud
+      player.move(0, 0, dt);
+      if (player.onGround && !G.thudded) { G.thudded = true; G.toppled = true; G.killTimer = 0; playThud(); playerActor.play('Idle'); endScreen('You fell', `You fell down the hole after <b>${fmtExact(G.t)}</b>.`); }
+    }
     G.killTimer += dt; updateDoors(dt); updateItems(dt);
     const k = G.toppled ? Math.min(1, G.killTimer / 0.45) : 0; playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
   } else { updateDoors(dt); }
