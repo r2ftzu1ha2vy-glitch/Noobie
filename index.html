@@ -123,6 +123,10 @@
   #knob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid rgba(255,255,255,.65)}
   .tb{position:absolute;display:flex;align-items:center;justify-content:center;padding:0;border-radius:50%;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.35);color:#fff;font-weight:700;touch-action:none;-webkit-user-select:none;user-select:none;cursor:pointer}
   .tb.down{background:rgba(255,255,255,.32)}
+  .ico{width:1.15em;height:1.15em;vertical-align:-.2em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .tsm .ico{width:22px;height:22px}
+  .chip .ico{width:14px;height:14px;vertical-align:-.15em}
+  .plist .ico{width:20px;height:20px}
   .tb.on{background:#b3392c;border-color:#ff7a6b}
   #bUse{right:calc(22px + var(--sar));bottom:calc(26px + var(--sab));width:84px;height:84px;font-size:22px;background:rgba(179,57,44,.55);border-color:rgba(255,122,107,.8)}
   #bJump{right:calc(122px + var(--sar));bottom:calc(20px + var(--sab));width:62px;height:62px;font-size:15px}
@@ -168,6 +172,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 /* ======================================================================
    CONFIG — everything tunable lives here
@@ -199,6 +204,7 @@ const CFG = {
   camDist: 10, camHeight: 0.85,
   crouchH: 0.62, crouchSpeed: 0.5, crouchEye: 0.3, crouchSquash: 0.38,   // crouch: body height (x standing), speed (x), eye drop, model squash
   sens: 0.0024,
+  touchSens: 0.009,            // touch-drag look speed (radians per pixel): raise for faster turning
 };
 const BODY_H = 1.62 * CFG.charScale;
 const CROUCH_H = BODY_H * CFG.crouchH;
@@ -209,6 +215,19 @@ const DEBUG = params.has('debug');
    Small helpers
    ====================================================================== */
 const $ = id => document.getElementById(id);
+// inline SVG icons (no emoji: they render differently on every phone)
+const _ico = b => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${b}</svg>`;
+const IC = {
+  full: _ico('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+  eye: _ico('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  flash: _ico('<path d="M8 3h8l-1.5 5h-5z"/><path d="M9.5 8h5v11a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2z"/><path d="M12 12v2"/>'),
+  pause: _ico('<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>'),
+  hammer: _ico('<path d="M13 3l8 8-3 3-8-8z"/><path d="M11.5 9.5L4 17a1.5 1.5 0 0 0 3 3l7.5-7.5"/>'),
+  plank: _ico('<rect x="2" y="8.5" width="20" height="7" rx="1"/><path d="M6 12h.01M18 12h.01M10 11h4"/>'),
+  battery: _ico('<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10v4M7 10v4M11 10v4"/>'),
+  bolt: _ico('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
+  crown: _ico('<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/>'),
+};
 const fmt = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
@@ -618,9 +637,9 @@ const HEX = { red: '#e23b3b', orange: '#ff8a1f', yellow: '#ffd21f', green: '#4cc
 const cap = w => w[0].toUpperCase() + w.slice(1);
 const colRe = '(Red|Orange|Yellow|Green|Blue|Purple|Pink|Gold)';
 const RE = { door: /^Door(_\d+)?$/, cdoor: new RegExp('^' + colRe + '_Door$'), key: new RegExp('^' + colRe + '_Key(_\\d+)?$'),
-  hammer: /^Hammer(_\d+)?$/, plank: /^Plank(_\d+)?$/, battery: /^Battery/, board: /^Board(_\d+)?$/, lock: /_Lock/ };
+  hammer: /^Hammer(_\d+)?$/, plank: /^Plank(_\d+)?$/, battery: /^Battery/, board: /^Board(_\d+)?$/, lock: /_Lock/, blockage: /^Blockage(_\d+)?$/ };
 const farCol = () => new Collider(new THREE.Vector3(-.5, -.5, -.5), new THREE.Vector3(.5, .5, .5), new THREE.Matrix4().makeTranslation(0, -5000, 0));
-let spawnObj = null, generatorMesh = null, bridgeA = null, bridgeB = null;
+let spawnObj = null, generatorMesh = null, bridgeA = null, bridgeB = null, blockage = null;
 
 const meshes = []; mapRoot.traverse(o => { if (o.isMesh) meshes.push(o); });
 for (const m of meshes) {
@@ -642,6 +661,10 @@ for (const m of meshes) {
   if (RE.board.test(n)) {
     const b = { kind: 'board', mesh: m, closedCol: col, openCol: farCol(), wantOpen: false, broken: false, box, home: { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() } };
     m.userData.board = b; blockers.push(m); world.add(col); boards.push(b); navDoors.push(b); continue;
+  }
+  if (RE.blockage.test(n)) {   // floor cover over the vent shaft: solid until the Blue lock and the vent board are both gone
+    blockage = { kind: 'blockage', mesh: m, closedCol: col, openCol: farCol(), wantOpen: false, removed: false, tagNode: () => false, home: { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() } };
+    blockers.push(m); world.add(col); staticCols.push(col); navDoors.push(blockage); continue;
   }
   const isDoor = RE.door.test(n), isCDoor = RE.cdoor.exec(n);
   if (!invisible) blockers.push(m);
@@ -707,6 +730,10 @@ if (bridgeA && bridgeB) {
 const player = new Body(world), enemy = new Body(world);
 const probe = spawnPos.clone();
 const nav = new Nav(world, staticCols, navDoors, { x: probe.x, y: world.groundAt(probe.x, probe.z, probe.y + CFG.step + 0.5), z: probe.z });
+if (blockage) {   // Noobie may cross the cover while it is there, but must not path over the hole once it is gone
+  const bit = 1 << navDoors.indexOf(blockage);
+  for (const n of nav.nodes) { const t = blockage.closedCol.topAt(n.x, n.z, n.y + 0.01); if (isFinite(t) && Math.abs(t - n.y) < 0.05) n.dmO |= bit; }
+}
 console.log(`[nav] ${nav.nodes.length} nodes in ${nav.ms.toFixed(0)} ms, ${doors.length} doors, ${boards.length} boards`);
 
 /* ---------- actors ---------- */
@@ -864,6 +891,18 @@ function breakBoard(b) {
   fx.push({ obj: b.mesh, vel: new THREE.Vector3((Math.random() - .5) * 8, 5, (Math.random() - .5) * 8), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3), t: 0 });
   sfx('smash'); toast('SMASH', '#ff8a4a', 700);
 }
+// The vent board is the one board that does not cover a door. The Blockage goes away only when the Blue door is
+// unlocked AND that board is smashed. State is derived, so every player in a multiplayer room reaches the same result.
+const ventBoard = boards.find(b => !doors.some(d => d.boards.includes(b)));
+const blueDoor = doors.find(d => d.lockColor === 'blue');
+function checkBlockage() {
+  if (!blockage || blockage.removed) return;
+  if (!(blueDoor && !blueDoor.locked && ventBoard && ventBoard.broken)) return;
+  blockage.removed = true; blockage.wantOpen = true; blockage.closedCol.enabled = false;
+  const i = blockers.indexOf(blockage.mesh); if (i >= 0) blockers.splice(i, 1);
+  fx.push({ obj: blockage.mesh, vel: new THREE.Vector3(0, -5, 0), spin: new THREE.Vector3(0.4, 0.2, 0.3), t: 0 });
+  if (G.state === 'playing') { sfx('smash'); toast('The vent is open', '#9ad0ff', 2200); }
+}
 function unlockDoor(d) {
   net('unlock', doors.indexOf(d));
   d.locked = false; d.locks.forEach(l => (l.visible = false)); inv.keys.delete(d.lockColor); inv.held = null;
@@ -893,8 +932,8 @@ function renderInv() {
   const chip = (t, c = '#fff') => `<div class="chip" style="color:${c}">${t}</div>`;
   let h = '';
   for (const c of COLORS) if (inv.keys.has(c)) h += `<div class="chip" style="color:${HEX[c]}"><i style="background:${HEX[c]}"></i>${cap(c)} key</div>`;
-  if (inv.hammer) h += chip('🔨 Hammer'); if (inv.plank) h += chip('🪵 Plank'); if (inv.batteries) h += chip('🔋 ×' + inv.batteries, '#7dffa0');
-  h += chip(gen.on ? '⚡ Generator ON' : `⚡ Generator ${gen.inserted}/${CFG.batteriesNeeded}`, gen.on ? '#7dffa0' : '#9aa');
+  if (inv.hammer) h += chip(IC.hammer + ' Hammer'); if (inv.plank) h += chip(IC.plank + ' Plank'); if (inv.batteries) h += chip(IC.battery + ' ×' + inv.batteries, '#7dffa0');
+  h += chip(IC.bolt + (gen.on ? ' Generator ON' : ` Generator ${gen.inserted}/${CFG.batteriesNeeded}`), gen.on ? '#7dffa0' : '#9aa');
   $('inv').innerHTML = h;
 }
 function updateItems(dt) {
@@ -919,6 +958,11 @@ function resetGame(o = {}) {
     if (!blockers.includes(b.mesh)) blockers.push(b.mesh);
   }
   fx.length = 0;
+  if (blockage) {
+    blockage.removed = false; blockage.wantOpen = false; blockage.closedCol.enabled = true; blockage.mesh.visible = true;
+    blockage.mesh.position.copy(blockage.home.p); blockage.mesh.quaternion.copy(blockage.home.q); blockage.mesh.scale.copy(blockage.home.s); blockage.mesh.updateMatrixWorld(true);
+    if (!blockers.includes(blockage.mesh)) blockers.push(blockage.mesh);
+  }
   if (bridge) { bridge.placed = false; bridge.wantOpen = false; bridge.closedCol.enabled = false; bridgeMesh.visible = false; }
   inv.keys.clear(); inv.hammer = false; inv.plank = false; inv.batteries = 0; inv.held = null; G.crouching = false; G.crouchK = 0; if (typeof TI !== 'undefined') { TI.crouch = false; $('bCrouch')?.classList.remove('on'); } gen.inserted = 0; gen.on = false; genLight.visible = false; amb.intensity = 0.5; stopHum();
   populateItems(o.seed != null ? mulberry32(o.seed) : Math.random); renderInv();
@@ -969,6 +1013,7 @@ function toggleDoor(d) {
 }
 const ease = t => t * t * (3 - 2 * t);
 function updateDoors(dt) {
+  checkBlockage();
   for (const d of doors) {
     if (d.state === 'opening' || d.state === 'closing') {
       d.t = Math.min(1, d.t + dt / CFG.doorTime);
@@ -1197,17 +1242,17 @@ if (TOUCH) {
   wrap.innerHTML = `<div id="tzone"></div>
     <div id="joy"><div id="knob"></div></div>
     <div id="rotate">Rotate to landscape for a better view</div>
-    <button class="tb tsm" id="bFull" aria-label="Fullscreen">&#x26F6;</button>
-    <button class="tb tsm" id="bView" aria-label="Camera view">&#x1F441;</button>
-    <button class="tb tsm" id="bFlash" aria-label="Flashlight">&#x1F526;</button>
-    <button class="tb tsm" id="bPause" aria-label="Pause">&#x275A;&#x275A;</button>
+    <button class="tb tsm" id="bFull" aria-label="Fullscreen">${IC.full}</button>
+    <button class="tb tsm" id="bView" aria-label="Camera view">${IC.eye}</button>
+    <button class="tb tsm" id="bFlash" aria-label="Flashlight">${IC.flash}</button>
+    <button class="tb tsm" id="bPause" aria-label="Pause">${IC.pause}</button>
     <button class="tb" id="bCrouch">CROUCH</button>
     <button class="tb" id="bSprint">RUN</button>
     <button class="tb" id="bJump">JUMP</button>
     <button class="tb" id="bUse">USE</button>`;
   document.body.appendChild(wrap);
   const zone = $('tzone'), joy = $('joy'), knob = $('knob');
-  const JR = 50, LOOK = 0.0048;
+  const JR = 50, LOOK = CFG.touchSens;
   let joyId = null, lookId = null, jx = 0, jy = 0, lx = 0, ly = 0;
   const moveJoy = e => {
     const dx = e.clientX - jx, dy = e.clientY - jy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, JR / d);
@@ -1503,6 +1548,12 @@ async function fbLoad() {
   FB = { D, db };
   return FB;
 }
+let mpWarned = false;
+function mpFail(e) {   // permission errors used to be swallowed, which made 'nobody can see anybody' impossible to diagnose
+  console.warn('[multiplayer]', e);
+  const m = String(e?.code || e?.message || e);
+  if (!mpWarned && /permission_denied/i.test(m)) { mpWarned = true; toast('Multiplayer is blocked by the Firebase database rules. Publish database.rules.json', '#ff8a7a', 6000); }
+}
 function niceError(e) {
   const m = String(e?.code || e?.message || e);
   if (m.includes('operation-not-allowed')) return 'Turn on Anonymous sign-in in the Firebase console (Authentication > Sign-in method).';
@@ -1598,7 +1649,7 @@ function mpCheckEnd() {
 }
 function markOut(kind) {
   if (!MP.on || MP.role !== 'runner') return;
-  FB.D.update(rref('players/' + MP.uid), { out: kind }).catch(() => {});
+  FB.D.update(rref('players/' + MP.uid), { out: kind }).catch(mpFail);
 }
 
 /* ---------- a round ---------- */
@@ -1613,9 +1664,10 @@ function mpStartRound(meta) {
   G.t = -4;
   $('objective').textContent = MP.role === 'noobie' ? 'You are Noobie. Wait in the room. When the door opens, catch every runner.' : 'Escape through the gold front door. Smash its boards, find the gold key. Work together.';
   const { D } = FB;
-  MP.roundUnsub.push(D.onChildAdded(rref('events'), s => mpEvent(s.val())));
-  MP.roundUnsub.push(D.onChildAdded(rref('pos'), s => mpPos(s.key, s.val())));
-  MP.roundUnsub.push(D.onChildChanged(rref('pos'), s => mpPos(s.key, s.val())));
+  mpWarned = false;
+  MP.roundUnsub.push(D.onChildAdded(rref('events'), s => mpEvent(s.val()), mpFail));
+  MP.roundUnsub.push(D.onChildAdded(rref('pos'), s => mpPos(s.key, s.val()), mpFail));
+  MP.roundUnsub.push(D.onChildChanged(rref('pos'), s => mpPos(s.key, s.val()), mpFail));
   lockPointer();
   setTimeout(() => { if (MP.on && !G.locked && !TOUCH) toast('Click the game to capture the mouse', '#fff', 3000); }, 500);
 }
@@ -1651,7 +1703,7 @@ function applyGen(n) {
 }
 function net(type, id, extra = {}) {
   if (!MP.on || MP.applying) return;
-  FB.D.push(rref('events'), { type, id: String(id), by: MP.uid, ts: FB.D.serverTimestamp(), ...extra }).catch(() => {});
+  FB.D.push(rref('events'), { type, id: String(id), by: MP.uid, ts: FB.D.serverTimestamp(), ...extra }).catch(mpFail);
 }
 
 function nameSprite(txt) {
@@ -1669,7 +1721,7 @@ function mpPos(key, v) {
     const pos = new THREE.Vector3(v.x, v.y, v.z);
     if (key === MP.noobieKey) r = { isN: true, actor: noobieActor, pos, hd: v.h };
     else {
-      const actor = new Actor({ scene: gPlayer.scene.clone(true), animations: gPlayer.animations });
+      const actor = new Actor({ scene: SkeletonUtils.clone(gPlayer.scene), animations: gPlayer.animations })   /* Object3D.clone() shares the skeleton, so remote players were drawn on top of YOU; SkeletonUtils gives each its own */;
       actor.root.add(nameSprite(MP.players[key]?.name || '?')); scene.add(actor.root);
       r = { actor, pos, hd: v.h };
     }
@@ -1713,7 +1765,7 @@ function mpTick(dt) {
     const s = JSON.stringify(o), l = MP.last[key];
     if (l && l.s === s && now - l.t < 1000) continue;
     MP.last[key] = { s, t: now };
-    FB.D.set(rref('pos/' + key), o).catch(() => {});
+    FB.D.set(rref('pos/' + key), o).catch(mpFail);
   }
 }
 function checkCaught(dt) {   // each runner decides for themselves whether Noobie got them
@@ -1767,7 +1819,7 @@ function renderLobby() {
   if (!MP.active || MP.started) return;
   if (G.state !== 'menu') toMenuState();
   const m = MP.meta || {}, ps = MP.players, ids = Object.keys(ps).sort((a, b) => (ps[a].joinedAt || 0) - (ps[b].joinedAt || 0));
-  const list = ids.map(u => `<div>${esc(ps[u].name)}${u === m.host ? ' 👑' : ''}${u === MP.uid ? ' (you)' : ''}</div>`).join('');
+  const list = ids.map(u => `<div>${esc(ps[u].name)}${u === m.host ? ' ' + IC.crown : ''}${u === MP.uid ? ' (you)' : ''}</div>`).join('');
   const needTwo = m.mode === 'player' && ids.length < 2;
   const modeBtns = MP.host
     ? `<div class="mrow"><button class="mbtn ${m.mode !== 'player' ? 'on' : ''}" data-mode="bot">A bot</button><button class="mbtn ${m.mode === 'player' ? 'on' : ''}" data-mode="player">A player</button></div>`
@@ -1802,7 +1854,7 @@ function quitToMenu() { if (MP.active) mpLeave(); else showMainMenu(); }
 
 /* test / debug hooks */
 window.__game = {
-  G, player, enemy, doors, nav, world, CFG, THREE, scene, camera, renderer, blockers, items, inv, gen, boards, bridge, goldDoor, itemSpots, COLORS, navDoors,
+  G, player, enemy, doors, nav, world, CFG, THREE, scene, camera, renderer, blockers, items, inv, gen, boards, bridge, goldDoor, itemSpots, COLORS, navDoors, blockage, ventBoard, blueDoor, checkBlockage,
   interact, pickUp, unlockDoor, breakBoard, placeBridge, useGenerator, nearBridge, populateItems, spawnItem, bridgeA, bridgeB,
   advance(sec, step = 1 / 60) { for (let t = 0; t < sec; t += step) update(step); updateCamera(); },
   start() { resetGame(); hideOverlay(); },
