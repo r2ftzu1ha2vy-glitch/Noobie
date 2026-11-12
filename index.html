@@ -184,6 +184,39 @@
   body.cutscene #cutSkip{display:block}
   body.cutscene #hud,body.cutscene #cross,body.cutscene #prompt,body.cutscene #inv,body.cutscene #objective,body.cutscene #toast,body.cutscene #touch{display:none!important}
   @media (max-width:700px),(max-height:520px){#dialogue{font-size:22px;padding:8px 14px;min-height:46px;bottom:calc(6% + var(--sab))}#cutSkip{font-size:16px;padding:4px 12px}}
+
+  /* ===== Accounts, skins, admin panel ===== */
+  input,textarea{-webkit-user-select:text;user-select:text}
+  #menu .tabs{display:flex;gap:8px;margin-top:6px}
+  #menu .tabs .mbtn{margin-top:0;font-size:30px;padding:3px 10px}
+  #menu .gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#202124;border-color:#fff;font-size:28px}
+  #menu .mrow .mbtn.sm{font-size:30px}
+  #menu .gbtn:hover{background:#e8eaed}
+  #menu .gbtn svg{width:24px;height:24px;flex:none}
+  #menu .mor{text-align:center;color:#8a949c;font-size:24px;margin-top:6px}
+  #menu .acct{font-size:30px;color:#cfd6dd;margin:0 0 4px;word-break:break-word}
+  #menu .coin{color:#ffcf5a;white-space:nowrap}
+  #menu .coin .ico{width:.9em;height:.9em;vertical-align:-.1em}
+  #menu .mlink{background:none;border:0;color:#9ab;font:inherit;font-size:25px;text-decoration:underline;cursor:pointer;padding:4px 0;margin-top:6px;touch-action:manipulation}
+  #menu .okmsg{color:#7dffa0}
+  #skinCv{display:block;width:210px;height:240px;margin:4px auto 0}
+  #menu .alist{max-height:36vh;overflow-y:auto;margin-top:8px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+  #menu .arow{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.12)}
+  #menu .arow .an{font-size:30px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #menu .arow small{display:block;color:#9aa;font-size:22px;white-space:normal}
+  #menu .arow .mrow{gap:6px}
+  #menu .arow .mbtn{margin-top:4px;font-size:25px;padding:2px 8px;min-height:0}
+  @media (max-width:700px),(max-height:520px){
+    #menu .acct{font-size:25px}
+    #menu .tabs .mbtn{font-size:26px}
+    #menu .gbtn{font-size:24px}
+    #menu .mrow .mbtn.sm{font-size:25px}
+    #menu .mlink{font-size:21px}
+    #menu .arow .an{font-size:25px}
+    #menu .arow small{font-size:18px}
+    #menu .arow .mbtn{font-size:21px}
+    #skinCv{width:170px;height:190px}
+  }
 </style>
 <script type="importmap">
 {"imports":{
@@ -217,6 +250,11 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
    ====================================================================== */
 const CFG = {
   files: { map: 'House_Map.glb', player: 'NoobiePlayer.glb', noobie: 'Noobie.glb', menu: 'Main_Menu.glb', room: 'Noobie_Room.glb' },
+  skinFiles: { dodo: 'Dodo.glb' },   // extra skins: optional files, the game still runs if one is missing
+  dodoHeight: 1.0,                   // Dodo's height compared with Noobie's (1 = the same height, so the camera and collisions feel identical)
+  freeRenames: 1,                    // username changes every new account gets for free
+  renameCost: 50,                    // NoobieCoins per username change after the free ones
+  escapeReward: 25,                  // NoobieCoins earned each time you escape the house (signed-in players only)
   itemFiles: { hammer: 'Hammer.glb', plank: 'Plank.glb', battery: 'Battery.glb',
     key_yellow: 'Yellow_Key.glb', key_pink: 'Pink_Key.glb', key_purple: 'Purple_Key.glb', key_orange: 'Orange_Key.glb',
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
@@ -269,6 +307,7 @@ const IC = {
   battery: _ico('<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10v4M7 10v4M11 10v4"/>'),
   bolt: _ico('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
   crown: _ico('<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/>'),
+  coin: _ico('<circle cx="12" cy="12" r="9"/><path d="M9 16V8l6 8V8"/>'),
 };
 const fmt = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -593,20 +632,28 @@ class Nav {
 /* ======================================================================
    Animated character (node-transform animation clips from the GLBs)
    ====================================================================== */
+// clips a skin may not have: borrow a similar one so every skin works with the same game code
+const ANIM_ALIAS = { 'Jump': 'Walk', 'Crouch Start': 'Idle', 'Crouch Idle': 'Idle', 'Crouch Walk': 'Walk' };
 class Actor {
   constructor(gltf) {
-    this.root = new THREE.Group();
+    this.root = new THREE.Group(); this.model = null; this.cur = null; this.heading = 0;
+    this.setModel(gltf);
+  }
+  setModel(gltf) {   // also used to swap skins on a live actor
+    if (this.model) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.model); this.root.remove(this.model); }
     this.model = gltf.scene; this.model.scale.setScalar(CFG.charScale);
     this.root.add(this.model);
     this.mixer = new THREE.AnimationMixer(this.model);
     this.actions = {}; for (const c of gltf.animations) this.actions[c.name] = this.mixer.clipAction(c);
-    this.cur = null; this.heading = 0;
+    for (const [k, v] of Object.entries(ANIM_ALIAS)) if (!this.actions[k] && this.actions[v]) this.actions[k] = this.actions[v];
+    this.cur = null;
   }
   play(name, { fade = 0.15, once = false, speed = 1 } = {}) {
     const a = this.actions[name]; if (!a) return;
     a.timeScale = speed;
     if (this.cur === name) return;
     const prev = this.actions[this.cur];
+    if (prev === a) { this.cur = name; return; }   // two names for the same clip (see ANIM_ALIAS)
     a.reset(); a.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); a.clampWhenFinished = once;
     a.play(); if (prev) prev.crossFadeTo(a, fade, false);
     this.cur = name;
@@ -634,6 +681,9 @@ try {
   $('loading').innerHTML = 'Could not load the .glb files (including Main_Menu.glb and Noobie_Room.glb).<br><br>Keep <b>index.html</b> and every <b>.glb</b> in the same folder<br>and open it through a local server (e.g. <code>python -m http.server</code>), not file://.';
   throw e;
 }
+
+let gDodo = null;   // optional skin: a missing / broken Dodo.glb must never stop the game from starting
+try { gDodo = await load(CFG.skinFiles.dodo); } catch (e) { console.warn('[skins] Dodo.glb could not be loaded, the Dodo skin is unavailable.', e); }
 
 const TOUCH = params.has('touch') || matchMedia('(pointer:coarse)').matches;   // phones / tablets
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1259,7 +1309,10 @@ function timeUp() {
 }
 function win() {
   G.state = 'won'; markOut('escaped');
-  endScreen('You escaped!', `You got out of the house in <b>${fmtExact(G.t)}</b>.`);
+  const coins = awardCoins(CFG.escapeReward);
+  if (coins) toast(`+${coins} NoobieCoins`, '#ffcf5a', 2600);
+  const extra = coins ? `<br><span style="color:#ffcf5a">+${coins} NoobieCoins</span>` : (isAccount() ? '' : '<br><span style="color:#9aa;font-size:14px">Sign in to earn NoobieCoins.</span>');
+  endScreen('You escaped!', `You got out of the house in <b>${fmtExact(G.t)}</b>.${extra}`);
 }
 const fmtExact = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
@@ -1732,21 +1785,35 @@ const CODE_CH = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 5 }, () => CODE_CH[Math.floor(Math.random() * CODE_CH.length)]).join('');
 const srvNow = () => Date.now() + MP.offset;
 const r2 = v => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
-let FB = null;
+let FB = null, fbInitP = null;
 const rref = p => FB.D.ref(FB.db, 'rooms/' + MP.code + (p ? '/' + p : ''));
 
-async function fbLoad() {
-  if (FB) return FB;
-  const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
-  const [A, D, U] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-database.js'), import(base + 'firebase-auth.js')]);
-  const app = A.initializeApp(firebaseConfig);
-  const auth = U.initializeAuth(app, { persistence: U.inMemoryPersistence });   // every tab is its own player, which also makes testing with two tabs work
-  const cred = await U.signInAnonymously(auth);
-  MP.uid = cred.user.uid;
-  const db = D.getDatabase(app);
-  D.onValue(D.ref(db, '.info/serverTimeOffset'), s => (MP.offset = s.val() || 0));
-  FB = { D, db };
-  return FB;
+// Loads Firebase and restores a saved login. Does NOT sign anybody in: guests only get an anonymous account when they actually need one (multiplayer).
+function fbInit() {
+  if (FB) return Promise.resolve(FB);
+  if (fbInitP) return fbInitP;
+  fbInitP = (async () => {
+    const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
+    const [A, D, U] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-database.js'), import(base + 'firebase-auth.js')]);
+    const app = A.initializeApp(firebaseConfig);
+    // the login is kept on this device so progress follows the account; popupRedirectResolver is what makes Google sign-in work
+    const auth = U.initializeAuth(app, { persistence: [U.indexedDBLocalPersistence, U.browserLocalPersistence, U.inMemoryPersistence], popupRedirectResolver: U.browserPopupRedirectResolver });
+    const db = D.getDatabase(app);
+    D.onValue(D.ref(db, '.info/serverTimeOffset'), s => (MP.offset = s.val() || 0));
+    try { await U.getRedirectResult(auth); } catch (e) { console.warn('[auth] redirect sign-in failed', e); ACC.redirectErr = e; }
+    await auth.authStateReady();
+    FB = { A, D, U, auth, db };
+    U.onAuthStateChanged(auth, u => accAuthChanged(u));
+    return FB;
+  })();
+  fbInitP.catch(() => { fbInitP = null; });
+  return fbInitP;
+}
+async function fbLoad() {   // multiplayer: needs a user id, a guest gets an anonymous one
+  const fb = await fbInit();
+  if (!fb.auth.currentUser) await fb.U.signInAnonymously(fb.auth);
+  MP.uid = fb.auth.currentUser.uid;
+  return fb;
 }
 let mpWarned = false;
 function mpFail(e) {   // permission errors used to be swallowed, which made 'nobody can see anybody' impossible to diagnose
@@ -1756,6 +1823,7 @@ function mpFail(e) {   // permission errors used to be swallowed, which made 'no
 }
 function niceError(e) {
   const m = String(e?.code || e?.message || e);
+  if (m.includes('admin-restricted-operation')) return 'Turn on Anonymous sign-in in the Firebase console (Authentication > Sign-in method).';
   if (m.includes('operation-not-allowed')) return 'Turn on Anonymous sign-in in the Firebase console (Authentication > Sign-in method).';
   if (m.includes('PERMISSION_DENIED') || m.includes('permission_denied')) return 'Firebase refused that. Publish the database rules.';
   return e?.message || m;
@@ -1768,7 +1836,7 @@ async function mpCreate(name) {
     MP.code = newCode();
     if ((await D.get(rref())).exists()) continue;
     try {
-      await D.set(rref(), { meta: { host: MP.uid, status: 'lobby', mode: MP.pendingMode === 'player' ? 'player' : 'bot', createdAt: D.serverTimestamp() }, players: { [MP.uid]: { name, joinedAt: D.serverTimestamp() } } });
+      await D.set(rref(), { meta: { host: MP.uid, status: 'lobby', mode: MP.pendingMode === 'player' ? 'player' : 'bot', createdAt: D.serverTimestamp() }, players: { [MP.uid]: { name, skin: effectiveSkin(), joinedAt: D.serverTimestamp() } } });
     } catch (e) { if (i === 5) throw e; continue; }
     MP.pendingMode = null; MP.host = true; D.onDisconnect(rref()).remove(); mpAttach(); return;
   }
@@ -1783,7 +1851,7 @@ async function mpJoin(name, code) {
   if (meta.status !== 'lobby') throw new Error('That game already started.');
   const ps = (await D.get(rref('players'))).val() || {};
   if (!ps[MP.uid] && Object.keys(ps).length >= CFG.maxPlayers) throw new Error('That room is full.');
-  await D.set(rref('players/' + MP.uid), { name, joinedAt: D.serverTimestamp() });
+  await D.set(rref('players/' + MP.uid), { name, skin: effectiveSkin(), joinedAt: D.serverTimestamp() });
   MP.host = meta.host === MP.uid; D.onDisconnect(rref('players/' + MP.uid)).remove(); mpAttach();
 }
 function mpAttach() {
@@ -1922,7 +1990,7 @@ function mpPos(key, v) {
     const pos = new THREE.Vector3(v.x, v.y, v.z);
     if (key === MP.noobieKey) r = { isN: true, actor: noobieActor, pos, hd: v.h };
     else {
-      const actor = new Actor({ scene: SkeletonUtils.clone(gPlayer.scene), animations: gPlayer.animations })   /* Object3D.clone() shares the skeleton, so remote players were drawn on top of YOU; SkeletonUtils gives each its own */;
+      const actor = new Actor(skinGltf(MP.players[key]?.skin))   /* Object3D.clone() shares the skeleton, so remote players were drawn on top of YOU; skinGltf() clones with SkeletonUtils so each gets its own */;
       actor.root.add(nameSprite(MP.players[key]?.name || '?')); scene.add(actor.root);
       r = { actor, pos, hd: v.h };
     }
@@ -1977,21 +2045,390 @@ function checkCaught(dt) {   // each runner decides for themselves whether Noobi
 }
 
 /* ======================================================================
+   Skins
+   ====================================================================== */
+// 'noobie' is free for everybody. Every other skin only shows up for accounts the admin panel gave it to.
+const SKIN_DEFS = {
+  noobie: { name: 'Noobie', src: () => gPlayer, fit: null },
+  dodo:   { name: 'Dodo',   src: () => gDodo,   fit: null },
+};
+const GRANTABLE = Object.keys(SKIN_DEFS).filter(k => k !== 'noobie');   // what the admin panel can hand out
+const skinAvailable = id => !!(SKIN_DEFS[id] && SKIN_DEFS[id].src());
+{ // Noobie's model sets the standard height; every other skin is centred on its feet and scaled to match, so camera, crouch and collisions behave the same
+  const flat = g => { const c = SkeletonUtils.clone(g.scene); c.position.set(0, 0, 0); c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1); c.updateMatrixWorld(true); return new THREE.Box3().setFromObject(c); };
+  const bn = flat(gPlayer), stdH = bn.max.y - bn.min.y;
+  for (const [id, d] of Object.entries(SKIN_DEFS)) {
+    const g = id === 'noobie' ? null : d.src(); if (!g) continue;
+    const b = flat(g), h = b.max.y - b.min.y, sc = stdH * CFG.dodoHeight / (h || 1);
+    d.fit = { s: sc, x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2, y: b.min.y };
+  }
+}
+// a fresh, independent copy of a skin, ready to give to an Actor (unknown / missing skins fall back to Noobie)
+function skinGltf(id) {
+  const d = skinAvailable(id) ? SKIN_DEFS[id] : SKIN_DEFS.noobie, g = d.src();
+  const clone = SkeletonUtils.clone(g.scene);
+  if (!d.fit) return { scene: clone, animations: g.animations };
+  const f = d.fit, inner = new THREE.Group(), wrap = new THREE.Group();
+  inner.add(clone); inner.scale.setScalar(f.s); inner.position.set(-f.x * f.s, -f.y * f.s, -f.z * f.s);
+  wrap.add(inner);
+  return { scene: wrap, animations: g.animations };
+}
+const ownedSkins = () => (isAccount() && ACC.profile ? ACC.profile.skins.filter(skinAvailable) : ['noobie']);
+const effectiveSkin = () => { const s = ACC.profile?.skin; return s && ownedSkins().includes(s) ? s : 'noobie'; };
+let appliedSkin = 'noobie';
+function applySkin() {   // swaps the body you play with; only ever while in a menu, never in the middle of a round
+  const id = effectiveSkin();
+  if (id === appliedSkin || G.state !== 'menu') return;
+  playerActor.setModel(skinGltf(id)); cutActor.setModel(skinGltf(id));
+  playerActor.play('Idle'); appliedSkin = id;
+}
+
+// little turntable shown in the Skins menu (its own small renderer, created when the menu opens and thrown away when it closes)
+let skinPrev = null;
+function stopSkinPreview() {
+  if (!skinPrev) return;
+  cancelAnimationFrame(skinPrev.raf);
+  try { skinPrev.r.dispose(); skinPrev.r.forceContextLoss(); } catch (_) {}
+  skinPrev = null;
+}
+function startSkinPreview(cv) {
+  stopSkinPreview();
+  let r; try { r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true }); } catch (e) { cv.style.display = 'none'; return; }
+  const w = cv.clientWidth || 210, h = cv.clientHeight || 240;
+  r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.setSize(w, h, false);
+  const sc = new THREE.Scene(); sc.add(new THREE.AmbientLight(0xffffff, 1.25));
+  const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(2, 4, 5); sc.add(dl);
+  const cam = new THREE.PerspectiveCamera(32, w / h, 0.1, 200), pivot = new THREE.Group(); sc.add(pivot);
+  const sp = skinPrev = { r, sc, cam, pivot, actor: null, raf: 0, last: performance.now() };
+  const loop = now => {
+    if (skinPrev !== sp) return;
+    sp.raf = requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - sp.last) / 1000); sp.last = now;
+    pivot.rotation.y += dt * 0.9; sp.actor?.mixer.update(dt);
+    r.render(sc, cam);
+  };
+  sp.raf = requestAnimationFrame(loop);
+}
+function setPreviewSkin(id) {
+  const sp = skinPrev; if (!sp) return;
+  if (sp.actor) sp.pivot.remove(sp.actor.root);
+  const a = sp.actor = new Actor(skinGltf(id)); sp.pivot.add(a.root); a.play('Idle');
+  a.root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(a.root), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const dist = Math.max(size.y * 0.62 / Math.tan(THREE.MathUtils.degToRad(sp.cam.fov / 2)), size.x * 1.2) * 1.12;
+  sp.cam.position.set(0, c.y, dist); sp.cam.lookAt(0, c.y, 0);
+}
+
+/* ======================================================================
+   Accounts (Firebase Auth + a profile in the Realtime Database)
+   users/<uid> = { username, coins, renames, skin, skins: { dodo: true }, provider, createdAt }
+   ====================================================================== */
+const ACC = { user: null, profile: null, unsub: null, waiters: [], creating: false, busy: false, pendingName: '', redirectErr: null };
+const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+const NAME_RULE = 'Usernames are 3 to 16 letters, numbers or _';
+const isAccount = () => !!ACC.user;                 // signed in with a real account (guests are not)
+const cleanName = s => { const n = String(s || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16); return n.length >= 3 ? n : ''; };
+const randName = () => 'Noob' + Math.floor(100 + Math.random() * 900);
+let curMenu = '', menuRefresh = null;
+
+function normProfile(v) {
+  const extra = Object.keys(v.skins || {}).filter(k => v.skins[k] && SKIN_DEFS[k]);
+  return { username: String(v.username || randName()), coins: Math.max(0, Math.floor(+v.coins || 0)), renames: Math.max(0, Math.floor(+v.renames || 0)),
+    skin: String(v.skin || 'noobie'), skins: ['noobie', ...extra.filter(k => k !== 'noobie')] };
+}
+function waitProfile(ms = 10000) {
+  return new Promise((res, rej) => {
+    if (ACC.profile) { res(); return; }
+    const w = { res: () => { clearTimeout(w.t); res(); }, rej: e => { clearTimeout(w.t); rej(e); } };
+    w.t = setTimeout(() => { ACC.waiters = ACC.waiters.filter(x => x !== w); rej(new Error('Could not load your profile. Publish database.rules.json in the Firebase console.')); }, ms);
+    ACC.waiters.push(w);
+  });
+}
+async function createProfile(user) {
+  const { D, db } = FB;
+  const username = cleanName(ACC.pendingName) || cleanName(user.displayName) || cleanName((user.email || '').split('@')[0]) || randName();
+  const provider = user.providerData?.[0]?.providerId === 'google.com' ? 'google' : 'password';
+  // update(), not set(): the database rules grant write per field, and update() is checked field by field
+  await D.update(D.ref(db, 'users/' + user.uid), { username, coins: 0, renames: 0, skin: 'noobie', provider, createdAt: D.serverTimestamp() });
+}
+function accAuthChanged(user) {
+  if (ACC.unsub) { try { ACC.unsub(); } catch (_) {} ACC.unsub = null; }
+  ACC.profile = null; ACC.user = null;
+  if (!user) { MP.uid = null; applySkin(); return; }
+  MP.uid = user.uid;
+  if (user.isAnonymous) { applySkin(); return; }   // a guest who tried multiplayer: no profile, no saved progress
+  ACC.user = user;
+  const { D, db } = FB;
+  ACC.unsub = D.onValue(D.ref(db, 'users/' + user.uid), snap => {
+    const v = snap.val();
+    if (!v) { if (!ACC.creating) createProfile(user).catch(e => { console.warn('[profile]', e); ACC.waiters.splice(0).forEach(w => w.rej(e)); }); return; }
+    ACC.profile = normProfile(v);
+    if (ACC.profile.skin !== effectiveSkin()) D.update(D.ref(db, 'users/' + user.uid), { skin: 'noobie' }).catch(() => {});   // the admin took a skin away: fall back to Noobie
+    applySkin();
+    ACC.waiters.splice(0).forEach(w => w.res());
+    if (curMenu === 'boot' || (curMenu === 'auth' && !ACC.busy)) showMainMenu();   // a saved login that finished loading late
+    else if (menuRefresh) menuRefresh();
+  }, err => { console.warn('[profile]', err); ACC.waiters.splice(0).forEach(w => w.rej(err)); });
+}
+function authMsg(e) {
+  const c = String(e?.code || ''), m = String(e?.message || e);
+  if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return '';
+  if (c === 'auth/invalid-email') return 'That email does not look right.';
+  if (c === 'auth/user-not-found' || c === 'auth/wrong-password' || c === 'auth/invalid-credential' || c === 'auth/invalid-login-credentials') return 'Wrong email or password.';
+  if (c === 'auth/email-already-in-use') return 'That email already has an account. Sign in instead.';
+  if (c === 'auth/weak-password') return 'Password needs at least 6 characters.';
+  if (c === 'auth/missing-password') return 'Type a password.';
+  if (c === 'auth/too-many-requests') return 'Too many tries. Wait a bit and try again.';
+  if (c === 'auth/network-request-failed') return 'No connection. Check your internet.';
+  if (c === 'auth/operation-not-allowed') return 'That sign-in method is turned off. Enable it in the Firebase console (Authentication > Sign-in method).';
+  if (c === 'auth/unauthorized-domain') return 'Add this website to Firebase Authentication > Settings > Authorized domains.';
+  if (c === 'auth/popup-blocked') return 'The sign-in window was blocked. Allow pop-ups and try again.';
+  if (/permission_denied/i.test(c + m)) return 'The database refused that. Publish database.rules.json in the Firebase console.';
+  return niceError(e);
+}
+// runs an auth action behind the "working" state of a menu, then goes to the main menu once the profile is loaded
+async function authRun(fn, msgId) {
+  const msg = t => { const el = $(msgId); if (el) el.textContent = t; };
+  const lock = on => { ACC.busy = on; $('menu').querySelectorAll('button,input').forEach(b => { b.disabled = on; }); };
+  lock(true); msg('Working…');
+  try {
+    const fb = await Promise.race([fbInit(), new Promise((_, no) => setTimeout(() => no(new Error('Could not reach the account server. Check your internet.')), 12000))]);
+    const r = await fn(fb);
+    if (r === 'redirect') return;
+    await waitProfile();
+    ACC.busy = false;
+    showMainMenu(`Welcome, ${ACC.profile.username}!`, true);
+  } catch (e) {
+    console.warn('[auth]', e);
+    ACC.busy = false;
+    if (ACC.user && !ACC.profile) { try { await FB.U.signOut(FB.auth); } catch (_) {} }   // signed in but no profile could be made: do not leave a half account behind
+    if ($(msgId)) { lock(false); msg(authMsg(e)); }
+  }
+}
+async function emailSignUp(fb, username, email, password) {
+  if (!NAME_RE.test(username)) throw new Error(NAME_RULE);
+  ACC.creating = true;
+  try {
+    const cred = await fb.U.createUserWithEmailAndPassword(fb.auth, email, password);
+    ACC.pendingName = username;
+    await createProfile(cred.user);
+  } finally { ACC.creating = false; ACC.pendingName = ''; }
+}
+async function googleSignIn(fb) {
+  const prov = new fb.U.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' });
+  try { await fb.U.signInWithPopup(fb.auth, prov); }
+  catch (e) {
+    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(e?.code)) { await fb.U.signInWithRedirect(fb.auth, prov); return 'redirect'; }
+    throw e;
+  }
+}
+async function signOutNow() {
+  try { await FB.U.signOut(FB.auth); } catch (e) { console.warn(e); }
+  ACC.profile = null; ACC.user = null; applySkin();
+  showAuth('Signed out.', 'in', true);
+}
+// NoobieCoins: the client adds them (see the note in SETUP.md about anti-cheat)
+function awardCoins(n) {
+  if (!ACC.user || !ACC.profile || !FB) return 0;
+  const { D, db } = FB;
+  D.update(D.ref(db, 'users/' + ACC.user.uid), { coins: D.increment(n) }).catch(e => console.warn('[coins]', e));
+  return n;
+}
+async function renameTo(raw) {
+  const p = ACC.profile; if (!p || !ACC.user) throw new Error('Sign in first.');
+  const n = String(raw || '').trim();
+  if (!NAME_RE.test(n)) throw new Error(NAME_RULE);
+  if (n === p.username) throw new Error('That is already your username.');
+  const free = p.renames < CFG.freeRenames, cost = free ? 0 : CFG.renameCost;
+  if (p.coins < cost) throw new Error(`A username change costs ${cost} NoobieCoins. You have ${p.coins}.`);
+  const { D, db } = FB;
+  // one atomic write: the name, the counter and the coins move together or not at all
+  await D.update(D.ref(db, 'users/' + ACC.user.uid), { username: n, renames: D.increment(1), coins: D.increment(-cost) });
+  return cost;
+}
+
+/* ======================================================================
+   Admin panel. Typing the secret number into the join-room code box asks the database for admin rights.
+   The number is NOT in this file: only the database rules know it (see database.rules.json), so reading the page source gives nothing away.
+   ====================================================================== */
+async function adminEnter(code) {
+  if (!isAccount()) throw new Error('Sign in to an account first.');
+  const { D, db } = await fbInit();
+  try { await D.set(D.ref(db, 'admins/' + ACC.user.uid), { c: code, at: D.serverTimestamp() }); }
+  catch (e) { console.warn('[admin] refused', e?.code || e); throw new Error('No room with that code.'); }   // a wrong code looks exactly like a wrong room code
+  showAdmin();
+}
+async function showAdmin(msg = '') {
+  setMenu(`<h2>Admin panel</h2><div class="mhint">Loading players…</div><button class="mbtn" id="bBack">Back</button>`, 'admin');
+  $('bBack').onclick = () => showMainMenu();
+  const { D, db } = FB;
+  let users;
+  try { users = (await D.get(D.ref(db, 'users'))).val() || {}; }
+  catch (e) { if (curMenu !== 'admin') return; console.warn('[admin]', e); setMenu(`<h2>Admin panel</h2><div class="mmsg">${esc(authMsg(e))}</div><button class="mbtn" id="bBack">Back</button>`, 'admin'); $('bBack').onclick = () => showMainMenu(); return; }
+  if (curMenu !== 'admin') return;   // left the panel while the list was loading
+  const rows = Object.entries(users).map(([uid, u]) => ({ uid, name: String(u.username || '?'), coins: +u.coins || 0, skins: Object.keys(u.skins || {}).filter(k => u.skins[k]) }));
+  setMenu(`<h2>Admin panel</h2><input class="minput" id="aSearch" placeholder="Search players" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="alist" id="aList"></div><div class="mmsg" id="aMsg"></div>
+    <div class="mrow"><button class="mbtn" id="bRefresh">Refresh</button><button class="mbtn" id="bBack">Back</button></div>`, 'admin');
+  const say = (t, ok) => { const el = $('aMsg'); if (el) { el.textContent = t; el.className = 'mmsg' + (ok ? ' okmsg' : ''); } };
+  const draw = () => {
+    const q = $('aSearch').value.trim().toLowerCase();
+    const list = rows.filter(r => !q || r.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+    $('aList').innerHTML = list.map(r => {
+      const owns = ['Noobie', ...r.skins.map(k => SKIN_DEFS[k]?.name || k)].join(', ');
+      const btns = GRANTABLE.map(k => { const has = r.skins.includes(k); return `<button class="mbtn ${has ? 'on' : ''}" data-uid="${esc(r.uid)}" data-skin="${k}">${has ? 'Remove' : 'Give'} ${esc(SKIN_DEFS[k].name)}</button>`; }).join('');
+      return `<div class="arow"><div class="an">${esc(r.name)}${r.uid === ACC.user.uid ? ' (you)' : ''}</div><small>${r.coins} coins · ${esc(owns)}</small><div class="mrow">${btns}<button class="mbtn" data-uid="${esc(r.uid)}" data-coins="100">+100 coins</button></div></div>`;
+    }).join('') || '<div class="mhint">No players found.</div>';
+  };
+  draw(); if (msg) say(msg, true);
+  $('aSearch').oninput = draw;
+  $('bBack').onclick = () => showMainMenu();
+  $('bRefresh').onclick = () => showAdmin();
+  $('aList').onclick = async e => {
+    const b = e.target.closest('button[data-uid]'); if (!b) return;
+    const row = rows.find(r => r.uid === b.dataset.uid); if (!row) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.skin) {
+        const k = b.dataset.skin, has = row.skins.includes(k), ref = D.ref(db, 'users/' + row.uid + '/skins/' + k);
+        if (has) { await D.remove(ref); row.skins = row.skins.filter(x => x !== k); } else { await D.set(ref, true); row.skins.push(k); }
+        say(`${has ? 'Took' : 'Gave'} ${SKIN_DEFS[k].name} ${has ? 'from' : 'to'} ${row.name}.`, true);
+      } else if (b.dataset.coins) {
+        await D.update(D.ref(db, 'users/' + row.uid), { coins: D.increment(+b.dataset.coins) }); row.coins += +b.dataset.coins;
+        say(`Gave ${b.dataset.coins} NoobieCoins to ${row.name}.`, true);
+      }
+    } catch (err) { console.warn('[admin]', err); say(authMsg(err)); }
+    draw();
+  };
+}
+
+/* ======================================================================
    Menus, lobby, results
    ====================================================================== */
 const getName = () => { try { return localStorage.getItem('noobieName') || ''; } catch (_) { return ''; } };
 const saveName = n => { try { localStorage.setItem('noobieName', n); } catch (_) {} };
-function setMenu(html) { $('menu').innerHTML = `<div class="panel">${html}</div>`; $('menu').style.display = 'block'; }
+function setMenu(html, name = '', refresh = null) {   // name + refresh let a live profile change (admin gave you a skin, coins) redraw the screen you are on
+  stopSkinPreview(); curMenu = name; menuRefresh = refresh;
+  $('menu').innerHTML = `<div class="panel">${html}</div>`; $('menu').style.display = 'block'; $('menu').scrollTop = 0;
+}
 function toMenuState() {
   cancelCutscene();
   G.state = 'menu'; G.paused = false; document.body.classList.add('inmenu'); hideOverlay(); stopHum();
   document.exitPointerLock?.();
+  applySkin();   // a skin picked (or taken away) while a round was running takes effect now
 }
-function showMainMenu(msg = '') {
+const GOOGLE_G = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2.1 1.4-4.7 2.3-7.7 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>';
+
+function acctLine() {
+  if (isAccount() && ACC.profile) return `<b>${esc(ACC.profile.username)}</b> &nbsp;<span class="coin">${IC.coin} ${ACC.profile.coins}</span>`;
+  return 'Guest <span style="color:#8a949c">· progress is not saved</span>';
+}
+function showMainMenu(msg = '', good = false) {
   toMenuState();
-  setMenu(`<h1>Noobie</h1><button class="mbtn" id="bPlay">Play</button><button class="mbtn" id="bMulti">Join room</button><button class="mbtn" id="bSet">Settings</button><div class="mmsg">${esc(msg)}</div>`);
+  setMenu(`<h1>Noobie</h1><div class="acct">${acctLine()}</div><button class="mbtn" id="bPlay">Play</button><button class="mbtn" id="bMulti">Join room</button>
+    <div class="mrow"><button class="mbtn" id="bSkins">Skins</button><button class="mbtn" id="bAcct">${isAccount() ? 'Account' : 'Sign in'}</button></div>
+    <button class="mbtn" id="bSet">Settings</button><div class="mmsg ${good ? 'okmsg' : ''}">${esc(msg)}</div>`, 'main', () => { if (curMenu === 'main') showMainMenu(); });
   $('bSet').onclick = showSettings; $('bPlay').onclick = showChapterSelect; $('bMulti').onclick = () => { MP.pendingMode = null; showMultiMenu(); };
+  $('bSkins').onclick = () => showSkins();
+  $('bAcct').onclick = () => (isAccount() ? showAccount() : showAuth('', 'in', true));
 }
+
+// Sign in / Sign up / Google / guest. fromMenu = opened with a Back button instead of "Play as guest"
+function showAuth(msg = '', mode = 'in', fromMenu = false) {
+  toMenuState();
+  const up = mode === 'up';
+  setMenu(`<div class="tabs"><button class="mbtn ${up ? '' : 'on'}" id="tIn">Sign in</button><button class="mbtn ${up ? 'on' : ''}" id="tUp">Sign up</button></div>
+    ${up ? '<input class="minput" id="fName" maxlength="16" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false">' : ''}
+    <input class="minput" id="fMail" type="email" placeholder="Email" autocomplete="email" autocapitalize="off" spellcheck="false">
+    <input class="minput" id="fPass" type="password" placeholder="Password" autocomplete="${up ? 'new-password' : 'current-password'}">
+    <button class="mbtn" id="bGo">${up ? 'Create account' : 'Sign in'}</button>
+    <div class="mor">or</div>
+    <button class="mbtn gbtn" id="bGoogle">${GOOGLE_G}<span>Continue with Google</span></button>
+    <div class="mmsg" id="aMsg">${esc(msg)}</div>
+    ${up ? `<div class="mhint">You get ${CFG.freeRenames} free username change. After that it costs ${CFG.renameCost} NoobieCoins.</div>` : '<button class="mlink" id="bForgot">Forgot password?</button>'}
+    <button class="mbtn" id="bGuest">${fromMenu ? 'Back' : 'Play as guest (not saved)'}</button>`, 'auth');
+  $('tIn').onclick = () => showAuth('', 'in', fromMenu); $('tUp').onclick = () => showAuth('', 'up', fromMenu);
+  const val = () => ({ name: up ? $('fName').value.trim() : '', mail: $('fMail').value.trim(), pass: $('fPass').value });
+  const go = () => {
+    const v = val();
+    if (up && !NAME_RE.test(v.name)) { $('aMsg').textContent = NAME_RULE; return; }
+    if (!v.mail || !v.pass) { $('aMsg').textContent = 'Type your email and password.'; return; }
+    authRun(fb => up ? emailSignUp(fb, v.name, v.mail, v.pass) : fb.U.signInWithEmailAndPassword(fb.auth, v.mail, v.pass), 'aMsg');
+  };
+  $('bGo').onclick = go;
+  $('menu').querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
+  $('bGoogle').onclick = () => authRun(fb => googleSignIn(fb), 'aMsg');
+  $('bGuest').onclick = () => showMainMenu();
+  if ($('bForgot')) $('bForgot').onclick = async () => {
+    const mail = $('fMail').value.trim(); if (!mail) { $('aMsg').textContent = 'Type your email first, then tap this again.'; return; }
+    try { const fb = await fbInit(); await fb.U.sendPasswordResetEmail(fb.auth, mail); $('aMsg').className = 'mmsg okmsg'; $('aMsg').textContent = 'Reset email sent. Check your inbox.'; }
+    catch (e) { $('aMsg').className = 'mmsg'; $('aMsg').textContent = authMsg(e); }
+  };
+}
+
+function showAccount(msg = '', ok = false) {
+  if (!isAccount() || !ACC.profile) { showAuth('', 'in', true); return; }
+  const p = ACC.profile, free = Math.max(0, CFG.freeRenames - p.renames), cost = free > 0 ? 0 : CFG.renameCost;
+  setMenu(`<h2>Account</h2><div class="plist">${esc(p.username)}</div><div class="plist coin">${IC.coin} ${p.coins} NoobieCoins</div>
+    <div class="mhint">${free > 0 ? `You have ${free} free username change${free > 1 ? 's' : ''}.` : `A username change costs ${CFG.renameCost} NoobieCoins.`}</div>
+    <input class="minput" id="aName" maxlength="16" placeholder="New username" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="mbtn" id="bRename">${cost ? `Change username (${cost} coins)` : 'Change username (free)'}</button>
+    <div class="mmsg ${ok ? 'okmsg' : ''}" id="aMsg">${esc(msg)}</div>
+    <div class="mrow"><button class="mbtn sm" id="bOut">Sign out</button><button class="mbtn sm" id="bBack">Back</button></div>`, 'account');
+  $('bBack').onclick = () => showMainMenu(); $('bOut').onclick = signOutNow;
+  let armed = false, t = 0;
+  const disarm = () => { armed = false; clearTimeout(t); if ($('bRename')) $('bRename').textContent = cost ? `Change username (${cost} coins)` : 'Change username (free)'; };
+  $('aName').addEventListener('input', disarm);
+  const run = async () => {
+    const n = $('aName').value.trim(), say = (m, g) => { $('aMsg').textContent = m; $('aMsg').className = 'mmsg' + (g ? ' okmsg' : ''); };
+    if (!NAME_RE.test(n)) { say(NAME_RULE); return; }
+    if (n === p.username) { say('That is already your username.'); return; }
+    if (p.coins < cost) { say(`A username change costs ${cost} NoobieCoins. You have ${p.coins}.`); return; }
+    if (cost && !armed) { armed = true; $('bRename').textContent = `Tap again: pay ${cost} coins`; t = setTimeout(disarm, 4000); return; }
+    $('bRename').disabled = true; say('Saving…');
+    try { const paid = await renameTo(n); showAccount(paid ? `Username changed. -${paid} NoobieCoins.` : 'Username changed. That was your free one.', true); }
+    catch (e) { console.warn(e); $('bRename').disabled = false; disarm(); say(authMsg(e)); }
+  };
+  $('bRename').onclick = run;
+  $('aName').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+}
+
+function showSkins() {
+  const sel = async id => {
+    if (!ownedSkins().includes(id)) return;
+    setPreviewSkin(id);
+    if (!isAccount() || !ACC.profile || ACC.profile.skin === id) { draw(); return; }
+    ACC.profile.skin = id; applySkin(); draw();   // equip right away, the database catches up
+    try { const { D, db } = FB; await D.update(D.ref(db, 'users/' + ACC.user.uid), { skin: id }); }
+    catch (e) { console.warn(e); const m = $('sMsg'); if (m) m.textContent = authMsg(e); }
+  };
+  const draw = () => {
+    const cur = effectiveSkin(), box = $('skList'); if (!box) return;
+    box.innerHTML = ownedSkins().map(id => `<button class="mbtn ${id === cur ? 'on' : ''}" data-skin="${id}">${esc(SKIN_DEFS[id].name)}${id === cur ? ' · equipped' : ''}</button>`).join('');
+    box.querySelectorAll('button').forEach(b => (b.onclick = () => sel(b.dataset.skin)));
+  };
+  setMenu(`<h2>Skins</h2><canvas id="skinCv"></canvas><div id="skList"></div>
+    <div class="mhint">${isAccount() ? 'Skins you get from the admin show up here.' : 'Sign in to keep skins you unlock.'}</div><div class="mmsg" id="sMsg"></div>
+    <button class="mbtn" id="bBack">Back</button>`, 'skins', () => { if (curMenu === 'skins') { draw(); if (skinPrev) setPreviewSkin(effectiveSkin()); } });
+  $('bBack').onclick = () => showMainMenu();
+  startSkinPreview($('skinCv')); setPreviewSkin(effectiveSkin()); draw();
+}
+
+// first screen of the game: restore a saved login, or ask who is playing
+async function bootAccount() {
+  toMenuState();
+  setMenu('<h1>Noobie</h1><div class="mhint">Loading your account…</div>', 'boot');
+  try {
+    const fb = await Promise.race([fbInit(), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 9000))]);
+    const u = fb.auth.currentUser;
+    if (u && !u.isAnonymous) { await waitProfile().catch(e => console.warn(e)); showMainMenu(ACC.profile ? `Welcome back, ${ACC.profile.username}!` : '', true); return; }
+    showAuth(ACC.redirectErr ? authMsg(ACC.redirectErr) : '', 'in', false);
+  } catch (e) {
+    console.warn('[boot] account server not reachable', e);
+    showAuth(e.message === 'slow' ? 'Still connecting to the account server… you can sign in once it is up, or play as a guest.' : 'Could not reach the account server. You can still play as a guest.', 'in', false);
+  }
+}
+
 function showSettings() {
   const label = () => `Flashlight: ${flashAllowed ? 'On' : 'Off'}`;
   setMenu(`<h2>Settings</h2><button class="mbtn ${flashAllowed ? 'on' : ''}" id="bFl">${label()}</button><div class="mhint">The house is very dark without it.</div><button class="mbtn" id="bBack">Back</button>`);
@@ -2024,19 +2461,23 @@ function startSingle() {
 }
 function showMultiMenu(msg = '') {
   toMenuState();
-  const nm = getName() || 'Noob' + Math.floor(100 + Math.random() * 900);
-  setMenu(`<h2>Multiplayer</h2><input class="minput" id="mName" maxlength="16" placeholder="Your name" value="${esc(nm)}">
+  const acct = isAccount() && ACC.profile, nm = acct ? ACC.profile.username : (getName() || randName());   // signed-in players always use their account name
+  setMenu(`<h2>Multiplayer</h2><input class="minput" id="mName" maxlength="16" placeholder="Your name" value="${esc(nm)}" ${acct ? 'readonly' : ''}>
     <button class="mbtn" id="bCreate">Create room</button>
-    <div class="mrow"><input class="minput" id="mCode" maxlength="5" placeholder="CODE" style="text-transform:uppercase"><button class="mbtn" id="bJoin">Join</button></div>
+    <div class="mrow"><input class="minput" id="mCode" maxlength="14" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" style="text-transform:uppercase"><button class="mbtn" id="bJoin">Join</button></div>
     <div class="mmsg" id="mMsg">${esc(msg)}</div><button class="mbtn" id="bBack">Back</button>`);
-  const name = () => { const n = $('mName').value.trim().slice(0, 16) || 'Noob'; saveName(n); return n; };
+  const name = () => { if (acct) return ACC.profile.username; const n = $('mName').value.trim().slice(0, 16) || 'Noob'; saveName(n); return n; };
   const busy = on => ['bCreate', 'bJoin', 'bBack'].forEach(i => { if ($(i)) $(i).disabled = on; });
   const run = async fn => {
     busy(true); $('mMsg').textContent = 'Connecting…';
     try { await fn(); } catch (e) { console.error(e); if ($('mMsg')) { busy(false); $('mMsg').textContent = niceError(e); } }
   };
   $('bCreate').onclick = () => run(() => mpCreate(name()));
-  $('bJoin').onclick = () => run(() => mpJoin(name(), $('mCode').value));
+  $('bJoin').onclick = () => {
+    const raw = $('mCode').value.trim();
+    if (/^\d{6,}$/.test(raw)) { run(() => adminEnter(raw)); return; }   // real room codes are 5 characters: a long number is an admin attempt, checked by the database, not by this page
+    run(() => mpJoin(name(), raw));
+  };
   $('bBack').onclick = () => showMainMenu();
   $('mCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('bJoin').click(); });
 }
@@ -2079,7 +2520,7 @@ function quitToMenu() { if (MP.active) mpLeave(); else showMainMenu(); }
 
 /* test / debug hooks */
 window.__game = {
-  G, player, enemy, doors, nav, world, CFG, THREE, scene, camera, renderer, blockers, items, inv, gen, boards, bridge, goldDoor, itemSpots, COLORS, navDoors, blockage, ventBoard, blueDoor, checkBlockage,
+  ACC, SKIN_DEFS, skinGltf, applySkin, ownedSkins, effectiveSkin, playerActor, G, player, enemy, doors, nav, world, CFG, THREE, scene, camera, renderer, blockers, items, inv, gen, boards, bridge, goldDoor, itemSpots, COLORS, navDoors, blockage, ventBoard, blueDoor, checkBlockage,
   interact, pickUp, unlockDoor, breakBoard, placeBridge, useGenerator, nearBridge, populateItems, spawnItem, bridgeA, bridgeB,
   advance(sec, step = 1 / 60) { for (let t = 0; t < sec; t += step) update(step); updateCamera(); },
   start() { resetGame(); hideOverlay(); },
@@ -2089,7 +2530,7 @@ window.__game = {
 $('loading').remove();
 $('objective').textContent = 'Escape through the gold front door. Smash its boards, find the gold key.';
 // first frame: put the player at spawn so the world is visible behind the start screen
-player.place(playerSpawnPos.x, playerSpawnPos.z, playerSpawnPos.y); syncRoots(0); showMainMenu();
+player.place(playerSpawnPos.x, playerSpawnPos.z, playerSpawnPos.y); syncRoots(0); bootAccount();
 requestAnimationFrame(frame);
 </script>
 </body>
