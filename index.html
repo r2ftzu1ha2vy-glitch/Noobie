@@ -223,6 +223,7 @@ const CFG = {
   menuMusicVolume: 0.5,
   thudSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // played when the player lands after falling into the hole
   batSound: '',                // cutscene bat sound: put a file name / URL here (e.g. 'Bat.mp3'); empty = built-in synth squeaks
+  doorOpenDeg: 80,             // how far doors swing open (90 = flat against the wall; lower keeps them nearer the doorway)
   fallDeathDrop: 6,            // falling this far below the 3rd-floor edge kills the player
   spawnName: 'Spawn',
   doorName: 'Door',            // exact node name that can be clicked open
@@ -743,7 +744,7 @@ for (const d of doors) {
   const C = d.closedCol, size = C.max.clone().sub(C.min), alongX = size.x > size.z;
   const mid = C.min.clone().add(C.max).multiplyScalar(0.5), half = (alongX ? size.x : size.z) / 2;
   d.cands = [];
-  for (const hs of [1, -1]) for (const ang of [Math.PI / 2, -Math.PI / 2]) {
+  for (const hs of [1, -1]) for (const ang of [CFG.doorOpenDeg * Math.PI / 180, -CFG.doorOpenDeg * Math.PI / 180]) {
     const hinge = mid.clone(); if (alongX) hinge.x += hs * half; else hinge.z += hs * half;
     const P = new THREE.Matrix4().makeTranslation(hinge.x, 0, hinge.z).multiply(new THREE.Matrix4().makeRotationY(ang)).multiply(new THREE.Matrix4().makeTranslation(-hinge.x, 0, -hinge.z));
     const M = P.clone().multiply(C.M);
@@ -1224,13 +1225,14 @@ function lose() {
     noobieActor.play('Kill', { once: true, fade: 0.1 });
   } else markOut('caught');
   playerActor.play('Idle');
-  endScreen('Noobie got you', `You lasted <b>${fmtExact(G.t)}</b> in the house.`);
+  const killDur = noobieActor.actions.Kill ? noobieActor.actions.Kill.getClip().duration : 1.5;   // let the whole kill animation play, then wait 2 s
+  endScreen('Game Over', `Noobie got you. You lasted <b>${fmtExact(G.t)}</b> in the house.`, (killDur + 2) * 1000);
 }
 function timeUp() {
   G.state = 'lost'; G.killTimer = 0;   // no Noobie attack, no topple
   markOut('timeup');
   playerActor.play('Idle');
-  endScreen("Time's up", `You didn't get out of the house in <b>${fmt(CFG.timeLimit)}</b>.`);
+  endScreen('Game Over', `Time's up. You didn't get out of the house in <b>${fmt(CFG.timeLimit)}</b>.`);
 }
 function win() {
   G.state = 'won'; markOut('escaped');
@@ -1262,20 +1264,21 @@ function startScreen() {
          <kbd>F</kbd> flashlight &nbsp; <kbd>Esc</kbd> pause</p>`}
     <div class="big">${TOUCH ? 'Tap' : 'Click'} to start</div>`);
 }
-function endScreen(title, body) {
-  if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, 900); return; }
+function endScreen(title, body, delay = 900) {
+  if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, delay); return; }
   document.exitPointerLock?.();
-  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">${TOUCH ? 'Tap' : 'Click or press R'} to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, 900);
+  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">${TOUCH ? 'Tap' : 'Click or press R'} to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, delay);
 }
 function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">${TOUCH ? 'Tap' : 'Click'} to resume</div><button class="mbtn" id="toMenuBtn">${MP.on ? 'Leave room' : 'Main menu'}</button>`); bindMenuBtn(); }
 
 /* ---------- cutscene ---------- */
 // Camera 1 -> "I Wonder How Noobie Is Doing" / "He Hasn't Gone To School For Awhile" -> bush rustle -> Camera 2 -> "What Was That?" -> black -> game.
 // Everything it needs is marked in House_Map.glb: Cutscene_Spawn, Cutscene_Camera1, Cutscene_Camera2 (and Player_Spawn for where the round starts).
-const CUT = { tok: 0, active: false, skip: false, cam: 1, turn: false };
+const CUT = { tok: 0, active: false, skip: false, cam: 1, turn: false, blend: 0, moving: false };
+const CUT_MOVE_S = 1.8;   // seconds the camera takes to glide from shot 1 to shot 2
 const CUT_LINES_A = ['I Wonder How Noobie Is Doing', "He Hasn't Gone To School For Awhile"];
 const CUT_LINE_B = 'What Was That?';
-const MP_LEAD_MS = 15000;   // multiplayer: how long after Start the clock begins (the cutscene runs inside this)
+const MP_LEAD_MS = 17000;   // multiplayer: how long after Start the clock begins (the cutscene runs inside this)
 const cutActor = new Actor({ scene: SkeletonUtils.clone(gPlayer.scene), animations: gPlayer.animations });
 cutActor.root.visible = false; scene.add(cutActor.root);
 const setFade = (v, ms) => { const f = $('fade'); f.style.transitionDuration = ms + 'ms'; f.style.opacity = v; };
@@ -1296,7 +1299,7 @@ function cancelCutscene() { clearTimeout(spawnLineT); if (!CUT.active) dlg('');
   if (CUT.active) { CUT.tok++; cutCleanup(); } }
 function beginCutscene(onDone) {
   if (!HAS_CUTSCENE) { onDone(); return; }
-  const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false;
+  const tok = ++CUT.tok; CUT.active = true; CUT.skip = false; CUT.cam = 1; CUT.turn = false; CUT.blend = 0; CUT.moving = false;
   G.state = 'cutscene'; document.body.classList.add('cutscene');
   playerActor.root.visible = false;
   const p = cutSpawnPos, g = world.groundAt(p.x, p.z, p.y + CFG.step + 0.5);
@@ -1322,7 +1325,7 @@ async function runCutscene(tok, onDone) {
   for (const line of CUT_LINES_A) { if (stop()) break; await say(line); }
   if (!stop()) { dlg(''); await wait(600); }
   if (!stop()) { sfx('bush'); await wait(450); }                    // rustle
-  if (!stop()) { CUT.cam = 2; await wait(900); }                    // cut to camera 2
+  if (!stop()) { CUT.moving = true; await wait(CUT_MOVE_S * 1000 + 500); }   // camera 1 glides to camera 2
   if (!stop()) await say(CUT_LINE_B, 900);
   if (!stop()) { dlg(''); playBat(); await wait(1700); }            // then the bat sound
   if (!alive()) return;
@@ -1337,7 +1340,14 @@ const _ct = new THREE.Vector3();
 function updateCutsceneCamera(dt) {
   cutActor.mixer.update(dt);
   const r = cutActor.root.position;
-  camera.position.copy(CUT.cam === 2 ? cutCam2Pos : cutCam1Pos);
+  if (CUT.moving) CUT.blend = Math.min(1, CUT.blend + dt / CUT_MOVE_S);
+  if (CUT.skip) CUT.blend = CUT.moving ? 1 : CUT.blend;
+  const k = CUT.blend * CUT.blend * (3 - 2 * CUT.blend);   // ease in/out
+  // glide on an arc around the player (not a straight line through them): blend angle + distance, height linearly
+  const a1 = Math.atan2(cutCam1Pos.x - r.x, cutCam1Pos.z - r.z), a2 = Math.atan2(cutCam2Pos.x - r.x, cutCam2Pos.z - r.z);
+  const r1 = Math.hypot(cutCam1Pos.x - r.x, cutCam1Pos.z - r.z), r2c = Math.hypot(cutCam2Pos.x - r.x, cutCam2Pos.z - r.z);
+  const ang = a1 + angDiff(a1, a2) * k, rad = r1 + (r2c - r1) * k;
+  camera.position.set(r.x + Math.sin(ang) * rad, cutCam1Pos.y + (cutCam2Pos.y - cutCam1Pos.y) * k, r.z + Math.cos(ang) * rad);
   _ct.set(r.x, r.y + BODY_H * 0.8, r.z); camera.lookAt(_ct);     // both cameras look at the player
 }
 
@@ -1527,7 +1537,8 @@ function updatePlayer(dt) {
   else if (!player.onGround) meActor.play('Jump', { once: true, fade: 0.08 });
   else if (wx || wz) meActor.play('Walk', { speed: sprint ? 1.45 : G.crouching ? 0.6 : 1 });
   else meActor.play('Idle');
-  if (wx || wz) meActor.face(wx, wz, dt);
+  if (G.firstPerson) meActor.face(Math.sin(G.yaw), Math.cos(G.yaw), dt, 20);   // first person: the body points where you look, so other players see it
+  else if (wx || wz) meActor.face(wx, wz, dt);
 }
 
 function update(dt) {
@@ -1544,7 +1555,7 @@ function update(dt) {
   } else if (G.state === 'lost') {
     if (G.fallDeath) {   // keep falling, then land with a thud
       player.move(0, 0, dt);
-      if (player.onGround && !G.thudded) { G.thudded = true; G.toppled = true; G.killTimer = 0; playThud(); playerActor.play('Idle'); endScreen('You fell', `You fell down the hole after <b>${fmtExact(G.t)}</b>.`); }
+      if (player.onGround && !G.thudded) { G.thudded = true; G.toppled = true; G.killTimer = 0; playThud(); playerActor.play('Idle'); endScreen('Game Over', `You fell down the hole after <b>${fmtExact(G.t)}</b>.`); }
     }
     G.killTimer += dt; updateDoors(dt); updateItems(dt);
     const k = G.toppled ? Math.min(1, G.killTimer / 0.45) : 0; playerActor.root.rotation.x = -k * Math.PI / 2 * 0.98; // topple over
@@ -2016,13 +2027,13 @@ function renderLobby() {
   $('bLeave').onclick = () => mpLeave();
 }
 function mpShowResults() {
-  MP.card = true; MP.title = 'Round over'; document.exitPointerLock?.(); mpRenderCard();
+  MP.card = true; MP.title = 'Game Over'; document.exitPointerLock?.(); mpRenderCard();
 }
 function mpRenderCard() {
   if (!MP.on || !MP.card) return;
   const ended = MP.meta?.status === 'ended', ps = MP.players, names = { escaped: 'escaped', caught: 'caught', timeup: "time's up" };
   const rows = Object.entries(ps).map(([u, p]) => `<tr><td>${esc(p.name)}${u === MP.uid ? ' (you)' : ''}</td><td>${u === MP.noobieUid ? 'Noobie' : names[p.out] || 'still running'}</td></tr>`).join('');
-  showOverlay(`<h1>${esc(ended ? 'Round over' : MP.title || '')}</h1><table>${rows}</table>`
+  showOverlay(`<h1>${esc(ended ? 'Game Over' : MP.title || '')}</h1><table>${rows}</table>`
     + (ended ? (MP.host ? '<button class="mbtn" id="bLobby">Back to lobby</button>' : '<div class="mhint">Waiting for the host…</div>') : '<button class="mbtn" id="bWatch">Keep watching</button>')
     + '<button class="mbtn" id="bLeave2">Leave room</button>');
   const on = (id, fn) => { const b = $(id); if (b) b.onclick = e => { e.stopPropagation(); fn(); }; };
