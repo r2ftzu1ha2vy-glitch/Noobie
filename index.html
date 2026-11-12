@@ -1941,6 +1941,7 @@ function mpStartRound(meta) {
   mpClearRound();
   $('menu').style.display = 'none'; document.body.classList.remove('inmenu'); hideOverlay();
   MP.on = true; G.paused = false;
+  setHunterSkin(MP.players[MP.noobieUid || meta.host]?.skin);   // everybody sees the hunter in the skin of whoever is Noobie (the host's skin when it is the bot)
   resetGame({ seed: meta.seed, role: MP.role });
   G.t = -MP_LEAD_MS / 1000;
   if (MP.role !== 'noobie') beginCutscene(() => { if (MP.on && MP.started) G.state = 'playing'; });   // runners watch the cutscene during the lead-in
@@ -2003,7 +2004,7 @@ function mpPos(key, v) {
     const pos = new THREE.Vector3(v.x, v.y, v.z);
     if (key === MP.noobieKey) r = { isN: true, actor: noobieActor, pos, hd: v.h };
     else {
-      const actor = new Actor(skinGltf(MP.players[key]?.skin))   /* Object3D.clone() shares the skeleton, so remote players were drawn on top of YOU; skinGltf() clones with SkeletonUtils so each gets its own */;
+      const actor = new Actor(runnerGltf())   /* Object3D.clone() shares the skeleton, so remote players were drawn on top of YOU; skinGltf() clones with SkeletonUtils so each gets its own */;
       actor.root.add(nameSprite(MP.players[key]?.name || '?')); scene.add(actor.root);
       r = { actor, pos, hd: v.h };
     }
@@ -2060,16 +2061,17 @@ function checkCaught(dt) {   // each runner decides for themselves whether Noobi
 /* ======================================================================
    Skins
    ====================================================================== */
+// Skins re-dress the Noobie hunter (Noobie.glb); the runner (NoobiePlayer.glb) is never skinned.
 // 'noobie' is free for everybody. Every other skin only shows up for accounts the admin panel gave it to.
 const SKIN_DEFS = {
-  noobie: { name: 'Noobie', src: () => gPlayer, fit: null },
+  noobie: { name: 'Noobie', src: () => gNoobie, fit: null },
   dodo:   { name: 'Dodo',   src: () => gDodo,   fit: null },
 };
 const GRANTABLE = Object.keys(SKIN_DEFS).filter(k => k !== 'noobie');   // what the admin panel can hand out
 const skinAvailable = id => !!(SKIN_DEFS[id] && SKIN_DEFS[id].src());
-{ // Noobie's model sets the standard height; every other skin is centred on its feet and scaled to match, so camera, crouch and collisions behave the same
+{ // Noobie hunter's model sets the standard height; every other skin is centred on its feet and scaled to match, so camera, crouch and collisions behave the same
   const flat = g => { const c = SkeletonUtils.clone(g.scene); c.position.set(0, 0, 0); c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1); c.updateMatrixWorld(true); return new THREE.Box3().setFromObject(c); };
-  const bn = flat(gPlayer), stdH = bn.max.y - bn.min.y;
+  const bn = flat(gNoobie), stdH = bn.max.y - bn.min.y;
   for (const [id, d] of Object.entries(SKIN_DEFS)) {
     const g = id === 'noobie' ? null : d.src(); if (!g) continue;
     const b = flat(g), h = b.max.y - b.min.y, sc = stdH * CFG.dodoHeight / (h || 1);
@@ -2089,11 +2091,16 @@ function skinGltf(id) {
 const ownedSkins = () => (isAccount() && ACC.profile ? ACC.profile.skins.filter(skinAvailable) : ['noobie']);
 const effectiveSkin = () => { const s = ACC.profile?.skin; return s && ownedSkins().includes(s) ? s : 'noobie'; };
 let appliedSkin = 'noobie';
-function applySkin() {   // swaps the body you play with; only ever while in a menu, never in the middle of a round
-  const id = effectiveSkin();
-  if (id === appliedSkin || G.state !== 'menu') return;
-  playerActor.setModel(skinGltf(id)); cutActor.setModel(skinGltf(id));
-  playerActor.play('Idle'); appliedSkin = id;
+// the runner is always the plain NoobiePlayer model (an independent clone, so every runner gets its own skeleton)
+const runnerGltf = () => ({ scene: SkeletonUtils.clone(gPlayer.scene), animations: gPlayer.animations });
+function setHunterSkin(id) {   // swaps the model of the Noobie hunter (bot or player-controlled) to a skin
+  id = skinAvailable(id) ? id : 'noobie';
+  if (id === appliedSkin) return;
+  noobieActor.setModel(skinGltf(id)); noobieActor.play('Idle'); appliedSkin = id;
+}
+function applySkin() {   // your own equipped skin, applied to the Noobie hunter; only ever while in a menu, never in the middle of a round
+  if (G.state !== 'menu') return;
+  setHunterSkin(effectiveSkin());
 }
 
 // little turntable shown in the Skins menu (its own small renderer, created when the menu opens and thrown away when it closes)
