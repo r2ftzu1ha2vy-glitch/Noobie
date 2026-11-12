@@ -263,6 +263,10 @@ const CFG = {
     key_gold: 'Gold_Key.glb', key_green: 'Green_Key.glb', key_blue: 'Blue_Key.glb' },   // there is no Red_Key.glb: the yellow one is tinted red
   menuMusic: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/u_p5wfvlgzy6-horror-main-menu-385962.mp3',   // or a local file next to index.html
   menuMusicVolume: 0.5,
+  noobieSong: 'Noobie_Song.mp3',   // Noobie's song: a local file next to index.html (or a full URL); it plays from Noobie's position once he spawns
+  noobieSongVolume: 0.9,
+  noobieSongRef: 6,               // distance (world units) where the song is still full volume
+  noobieSongMax: 80,              // beyond this distance it stops getting quieter
   thudSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // played when the player lands after falling into the hole
   batSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // the hit sound after "What Was That?" (empty = built-in synth squeaks)
   doorOpenDeg: 90,             // doors always swing a full 90 degrees: rotate 90, and the hinge edge makes the door slide half its width sideways and half its width out, so it ends flat against the opening
@@ -1341,10 +1345,15 @@ function startScreen() {
          <kbd>F</kbd> flashlight (if enabled in Settings) &nbsp; <kbd>Esc</kbd> pause</p>`}
     <div class="big">${TOUCH ? 'Tap' : 'Click'} to start</div>`);
 }
-function endScreen(title, body, delay = 900) {
-  if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, delay); return; }
+function endScreen(title, body, delay = 2000) {
+  if (MP.on) { MP.title = title; MP.card = true; document.exitPointerLock?.(); setTimeout(mpRenderCard, 900); return; }   // multiplayer: banner now, menu when the whole round ends (mpShowResults)
   document.exitPointerLock?.();
-  setTimeout(() => { showOverlay(`<h1>${title}</h1><p>${body}</p><div class="big">${TOUCH ? 'Tap' : 'Click or press R'} to play again</div><button class="mbtn" id="toMenuBtn">Main menu</button>`); bindMenuBtn(); }, delay);
+  const tmp = document.createElement('div'); tmp.innerHTML = body.replace(/<br\s*\/?>/gi, ' ');
+  const msg = title + ' ' + tmp.textContent.trim();
+  setTimeout(() => {   // solo: straight to the main menu (skipped if the player already left or restarted)
+    if (MP.on || !(G.state === 'won' || G.state === 'lost' || G.state === 'cutscene')) return;
+    showMainMenu(msg, title.startsWith('You escaped'));
+  }, delay);
 }
 function pauseScreen() { showOverlay(`<h1>Paused</h1><div class="big">${TOUCH ? 'Tap' : 'Click'} to resume</div><button class="mbtn" id="toMenuBtn">${MP.on ? 'Leave room' : 'Main menu'}</button>`); bindMenuBtn(); }
 
@@ -1784,13 +1793,52 @@ function musicTick(dt) {
   menuMusic.volume = musicVol;
 }
 
+/* ---------- Noobie's song (3D sound that follows Noobie) ---------- */
+// Plays from the moment Noobie spawns until the round ends or you leave to the menu. Louder and panned toward wherever he is.
+const noobieSong = new Audio(CFG.noobieSong);
+noobieSong.loop = true; noobieSong.preload = 'auto'; noobieSong.crossOrigin = 'anonymous';
+let songBroken = false, songNode = null, songVol = 0;
+noobieSong.addEventListener('error', () => { songBroken = true; console.warn('Noobie song could not be loaded:', CFG.noobieSong); });
+function songSetup() {
+  if (songNode || songBroken) return songNode;
+  const a = ac(); if (!a) return null;
+  try {
+    const src = a.createMediaElementSource(noobieSong), pan = a.createPanner(), gain = a.createGain();
+    pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = CFG.noobieSongRef; pan.maxDistance = CFG.noobieSongMax; pan.rolloffFactor = 1.6;
+    gain.gain.value = 0; src.connect(pan); pan.connect(gain); gain.connect(a.destination);
+    songNode = { a, pan, gain };
+  } catch (e) { songBroken = true; console.warn('Noobie song setup failed:', e); }
+  return songNode;
+}
+const _sp = new THREE.Vector3(), _sc = new THREE.Vector3(), _sf = new THREE.Vector3();
+function noobieSongTick(dt) {
+  const want = !songBroken && !document.hidden && G.noobie.spawned && (G.state === 'playing' || G.state === 'lost') && !(G.paused && !MP.on);
+  if (want) {
+    if (!songSetup()) return;
+    if (noobieSong.paused) noobieSong.play()?.catch?.(() => {});
+    songVol = Math.min(CFG.noobieSongVolume, songVol + dt * 1.2);
+  } else songVol = Math.max(0, songVol - dt * 2.5);
+  if (!songNode) return;
+  const { a, pan, gain } = songNode;
+  gain.gain.value = songVol;
+  if (!want && songVol === 0) { if (!noobieSong.paused) { noobieSong.pause(); noobieSong.currentTime = 0; } return; }
+  noobieActor.root.getWorldPosition(_sp); _sp.y += BODY_H * 0.6;
+  camera.getWorldPosition(_sc); camera.getWorldDirection(_sf);
+  const L = a.listener;
+  if (pan.positionX) {
+    pan.positionX.value = _sp.x; pan.positionY.value = _sp.y; pan.positionZ.value = _sp.z;
+    L.positionX.value = _sc.x; L.positionY.value = _sc.y; L.positionZ.value = _sc.z;
+    L.forwardX.value = _sf.x; L.forwardY.value = _sf.y; L.forwardZ.value = _sf.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
+  } else { pan.setPosition(_sp.x, _sp.y, _sp.z); L.setPosition(_sc.x, _sc.y, _sc.z); L.setOrientation(_sf.x, _sf.y, _sf.z, 0, 1, 0); }
+}
+
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   if (window.__freeze) return;
   touchTick();
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  musicTick(dt);
+  musicTick(dt); noobieSongTick(dt);
   if (G.state === 'menu') { menuMixer.update(dt); renderer.render(menuScene, menuCam); return; }
   if (!G.paused || MP.on) update(dt);
   if (G.state === 'cutscene') updateCutsceneCamera(dt); else updateCamera();
@@ -2585,6 +2633,7 @@ function renderLobby() {
 }
 function mpShowResults() {
   MP.card = true; MP.title = 'Game Over'; document.exitPointerLock?.(); mpRenderCard();
+  setTimeout(() => { if (MP.active && MP.meta?.status === 'ended') mpLeave(); }, 2000);   // everyone is out: back to the main menu
 }
 function mpRenderCard() {
   if (!MP.on || !MP.card) return;
