@@ -24,6 +24,7 @@
   #sub.hunt{color:#ff6b6b}
   #cross{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none;z-index:4}
   #prompt{position:fixed;left:50%;top:56%;transform:translateX(-50%);font-size:16px;font-weight:600;padding:5px 14px;border-radius:8px;background:rgba(0,0,0,.6);pointer-events:none;display:none;z-index:4}
+  #roundBanner{position:fixed;left:50%;top:calc(112px + var(--sat));transform:translateX(-50%);display:none;max-width:90vw;text-align:center;font-size:30px;font-weight:800;padding:4px 20px;border-radius:12px;background:rgba(0,0,0,.55);text-shadow:0 2px 10px rgba(0,0,0,.8);pointer-events:none;z-index:6}
   #toast{position:fixed;left:50%;top:22%;transform:translateX(-50%);font-size:28px;font-weight:800;color:#ff5252;text-shadow:0 2px 10px rgba(0,0,0,.8);pointer-events:none;opacity:0;transition:opacity .4s;z-index:6;white-space:nowrap}
   #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.82);z-index:10;cursor:pointer}
   #card{max-width:460px;text-align:center;padding:30px 36px;border-radius:16px;background:rgba(10,6,6,.96);border:1px solid #4a1414;box-shadow:0 0 40px rgba(120,0,0,.35)}
@@ -37,7 +38,7 @@
   .chip i{display:inline-block;width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px currentColor}
   #objective{position:fixed;right:14px;bottom:14px;max-width:300px;text-align:right;font-size:13px;line-height:1.35;color:#b9b9c9;background:rgba(0,0,0,.5);padding:7px 11px;border-radius:10px;z-index:5;pointer-events:none}
   #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;z-index:20;font-size:18px}
-  body.inmenu #hud,body.inmenu #vig,body.inmenu #cross,body.inmenu #prompt,body.inmenu #inv,body.inmenu #objective,body.inmenu #toast{display:none!important}
+  body.inmenu #hud,body.inmenu #vig,body.inmenu #cross,body.inmenu #prompt,body.inmenu #inv,body.inmenu #objective,body.inmenu #toast,body.inmenu #roundBanner{display:none!important}
   #menu{position:fixed;left:7vw;top:50%;transform:translateY(-50%);z-index:12;width:min(380px,86vw);display:none}
   #menu .panel{background:rgba(8,8,12,.72);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:22px 24px;backdrop-filter:blur(4px)}
   #menu h1{margin:0 0 6px;font-size:54px;line-height:1}
@@ -182,7 +183,7 @@
   #fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:30;transition:opacity .8s ease}
   #cutSkip{position:fixed;right:calc(16px + var(--sar));bottom:calc(14px + var(--sab));z-index:31;display:none;padding:6px 16px;font:inherit;font-size:20px;color:#fff;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.35);border-radius:10px;cursor:pointer;touch-action:manipulation}
   body.cutscene #cutSkip{display:block}
-  body.cutscene #hud,body.cutscene #cross,body.cutscene #prompt,body.cutscene #inv,body.cutscene #objective,body.cutscene #toast,body.cutscene #touch{display:none!important}
+  body.cutscene #hud,body.cutscene #cross,body.cutscene #prompt,body.cutscene #inv,body.cutscene #objective,body.cutscene #toast,body.cutscene #roundBanner,body.cutscene #touch{display:none!important}
   @media (max-width:700px),(max-height:520px){#dialogue{font-size:22px;padding:8px 14px;min-height:46px;bottom:calc(6% + var(--sab))}#cutSkip{font-size:16px;padding:4px 12px}}
 
   /* ===== Accounts, skins, admin panel ===== */
@@ -234,6 +235,7 @@
 <div id="inv"></div>
 <div id="objective"></div>
 <div id="toast"></div>
+<div id="roundBanner"></div>
 <div id="dialogue"><span id="dlgText"></span></div>
 <div id="fade"></div>
 <button id="cutSkip">Skip ▸</button>
@@ -1930,7 +1932,7 @@ function mpAttach() {
 }
 async function mpLeave(msg = '') {
   const D = FB?.D, code = MP.code, host = MP.host, uid = MP.uid;
-  MP.active = false; MP.started = false; MP.on = false; MP.card = false;
+  MP.active = false; MP.started = false; MP.on = false; MP.card = false; hideRoundBanner();
   for (const u of MP.unsub.splice(0)) { try { u(); } catch (_) {} }
   mpClearRound();
   try {
@@ -1993,7 +1995,7 @@ function markOut(kind) {
 
 /* ---------- a round ---------- */
 function mpStartRound(meta) {
-  MP.started = true; MP.card = false; MP.startAt = meta.startAt; MP.noobieUid = meta.noobieUid || null;
+  MP.started = true; MP.card = false; hideRoundBanner(); MP.startAt = meta.startAt; MP.noobieUid = meta.noobieUid || null;
   MP.noobieKey = MP.noobieUid || 'bot'; MP.role = MP.noobieUid === MP.uid ? 'noobie' : 'runner';
   MP.botHere = !MP.noobieUid && MP.host; MP.last = {}; MP.sendT = 0;
   mpClearRound();
@@ -2018,7 +2020,7 @@ function mpClearRound() {
   MP.remote = {};
 }
 function mpStopRound() {
-  MP.started = false; MP.on = false; MP.card = false; mpClearRound();
+  MP.started = false; MP.on = false; MP.card = false; hideRoundBanner(); mpClearRound();
   meActor = playerActor; $('objective').textContent = 'Escape through the gold front door. Smash its boards, find the gold key.';
   renderLobby();
 }
@@ -2586,16 +2588,10 @@ function mpShowResults() {
 }
 function mpRenderCard() {
   if (!MP.on || !MP.card) return;
-  const ended = MP.meta?.status === 'ended', ps = MP.players, names = { escaped: 'escaped', caught: 'caught', timeup: "time's up" };
-  const rows = Object.entries(ps).map(([u, p]) => `<tr><td>${esc(p.name)}${u === MP.uid ? ' (you)' : ''}</td><td>${u === MP.noobieUid ? 'Noobie' : names[p.out] || 'still running'}</td></tr>`).join('');
-  showOverlay(`<h1>${esc(ended ? 'Game Over' : MP.title || '')}</h1><table>${rows}</table>`
-    + (ended ? (MP.host ? '<button class="mbtn" id="bLobby">Back to lobby</button>' : '<div class="mhint">Waiting for the host…</div>') : '<button class="mbtn" id="bWatch">Keep watching</button>')
-    + '<button class="mbtn" id="bLeave2">Leave room</button>');
-  const on = (id, fn) => { const b = $(id); if (b) b.onclick = e => { e.stopPropagation(); fn(); }; };
-  on('bLobby', () => FB.D.update(rref('meta'), { status: 'lobby' }).catch(() => {}));
-  on('bWatch', () => { MP.card = false; hideOverlay(); });
-  on('bLeave2', () => mpLeave());
+  const ended = MP.meta?.status === 'ended', b = $('roundBanner');
+  b.textContent = ended ? 'Round over' : (MP.title || ''); b.style.display = 'block';
 }
+function hideRoundBanner() { const b = $('roundBanner'); if (b) b.style.display = 'none'; }
 function bindMenuBtn() { const b = $('toMenuBtn'); if (b) b.onclick = e => { e.stopPropagation(); quitToMenu(); }; }
 function quitToMenu() { if (MP.active) mpLeave(); else showMainMenu(); }
 
