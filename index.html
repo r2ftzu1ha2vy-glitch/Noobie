@@ -134,6 +134,7 @@
   .tsm{top:calc(10px + var(--sat));width:42px;height:42px;font-size:17px}
   #bPause{right:calc(10px + var(--sar))}
   #bFlash{right:calc(60px + var(--sar))}
+  body.noflash #bFlash{display:none}
   #bView{right:calc(110px + var(--sar))}
   #bFull{right:calc(160px + var(--sar))}
   #bCrouch{right:calc(128px + var(--sar));bottom:calc(98px + var(--sab));width:56px;height:56px;font-size:11px}
@@ -222,7 +223,7 @@ const CFG = {
   menuMusic: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/u_p5wfvlgzy6-horror-main-menu-385962.mp3',   // or a local file next to index.html
   menuMusicVolume: 0.5,
   thudSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // played when the player lands after falling into the hole
-  batSound: '',                // cutscene bat sound: put a file name / URL here (e.g. 'Bat.mp3'); empty = built-in synth squeaks
+  batSound: 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Noobie/main/virtual_vibes-thud-impact-sound-sfx-379990.mp3',   // the hit sound after "What Was That?" (empty = built-in synth squeaks)
   doorOpenDeg: 80,             // how far doors swing open (90 = flat against the wall; lower keeps them nearer the doorway)
   fallDeathDrop: 6,            // falling this far below the 3rd-floor edge kills the player
   spawnName: 'Spawn',
@@ -653,6 +654,10 @@ const flash = new THREE.SpotLight(0xfff1d6, 650, 100, 0.55, 0.9, 1.7);
 flash.position.set(0.6, -0.4, 0); camera.add(flash);
 flash.target.position.set(0, 0, -10); camera.add(flash.target);
 const FLASH_I = flash.intensity; let flashOn = true;
+// the flashlight is disabled unless it is switched on in Settings (saved on this device)
+let flashAllowed = (() => { try { return localStorage.getItem('noobieFlash') === '1'; } catch (_) { return false; } })();
+const applyFlashSetting = () => document.body.classList.toggle('noflash', !flashAllowed);
+applyFlashSetting();
 // dim warm lantern around the player so the ground at your feet is never pitch black
 const lantern = new THREE.PointLight(0xffb36b, 45, 22, 1.8); scene.add(lantern);
 const BASE_FOV = 70;
@@ -739,25 +744,43 @@ for (const lm of lockMeshes) {
 // boards that cover a door (the front door) must be smashed before it can be opened
 for (const d of doors) for (const b of boards) if (new THREE.Box3(d.closedCol.min, d.closedCol.max).expandByScalar(1.2).intersectsBox(b.box)) d.boards.push(b);
 
-// plain + coloured doors: pick hinge + swing direction that fits the architecture best
+// plain + coloured doors: pick hinge + swing direction + swing angle so the open door never pokes into a wall.
+// The walls in this map are paper thin, so the swung door is tested against them with a margin (a plain point-in-box test never hits them).
+const _dp = new THREE.Vector3();
+function nearBox(c, p, m) {
+  if (p.x < c.min.x - m || p.x > c.max.x + m || p.y < c.min.y - m || p.y > c.max.y + m || p.z < c.min.z - m || p.z > c.max.z + m) return false;
+  _dp.copy(p).applyMatrix4(c.inv); const e = c.M.elements;
+  const mx = m / Math.hypot(e[0], e[1], e[2]), my = m / Math.hypot(e[4], e[5], e[6]), mz = m / Math.hypot(e[8], e[9], e[10]);
+  return _dp.x >= c.lo.x - mx && _dp.x <= c.hi.x + mx && _dp.y >= c.lo.y - my && _dp.y <= c.hi.y + my && _dp.z >= c.lo.z - mz && _dp.z <= c.hi.z + mz;
+}
+function swingHits(C, alongX, mid, half, hinge, ang) {   // how many sample points of the door, swung by ang about the hinge, end up in/next to walls
+  const Rr = new THREE.Matrix4().makeRotationY(ang), dir = (alongX ? mid.x : mid.z) > (alongX ? hinge.x : hinge.z) ? 1 : -1;
+  let hits = 0;
+  for (let s = 0; s <= 10; s++) for (const hy of [1.5, 4, 7]) {
+    const dist = (0.2 + 0.8 * s / 10) * 2 * half, p = new THREE.Vector3(alongX ? dist * dir : 0, 0, alongX ? 0 : dist * dir).applyMatrix4(Rr).add(hinge);
+    p.y = C.min.y + hy;
+    for (const c of staticCols) if (nearBox(c, p, 0.35)) { hits++; break; }
+  }
+  return hits;
+}
 for (const d of doors) {
   const C = d.closedCol, size = C.max.clone().sub(C.min), alongX = size.x > size.z;
   const mid = C.min.clone().add(C.max).multiplyScalar(0.5), half = (alongX ? size.x : size.z) / 2;
-  d.cands = [];
-  for (const hs of [1, -1]) for (const ang of [CFG.doorOpenDeg * Math.PI / 180, -CFG.doorOpenDeg * Math.PI / 180]) {
-    const hinge = mid.clone(); if (alongX) hinge.x += hs * half; else hinge.z += hs * half;
-    const P = new THREE.Matrix4().makeTranslation(hinge.x, 0, hinge.z).multiply(new THREE.Matrix4().makeRotationY(ang)).multiply(new THREE.Matrix4().makeTranslation(-hinge.x, 0, -hinge.z));
-    const M = P.clone().multiply(C.M);
-    let score = 0; // how much of the swung door ends up inside walls
-    for (let s = 0; s <= 12; s++) for (const hy of [1.5, 4, 7]) {
-      const f = (s / 12 - 0.5) * 2 * (half - 0.15), q = mid.clone(); q.y = C.min.y + hy; if (alongX) q.x += f; else q.z += f;
-      const p = new THREE.Vector3().copy(q).sub(hinge).applyMatrix4(new THREE.Matrix4().makeRotationY(ang)).add(hinge); p.y = q.y;
-      for (const c of staticCols) if (c.contains(p)) { score++; break; }
-    }
-    d.cands.push({ M, angle: ang, hinge, score });
+  const hingeAt = hs => { const h = mid.clone(); if (alongX) h.x += hs * half; else h.z += hs * half; return h; };
+  const full = CFG.doorOpenDeg * Math.PI / 180;
+  let best = null;
+  for (const hs of [1, -1]) for (const sg of [1, -1]) {   // hinge end x swing direction: keep the one with the fewest hits at full swing
+    const hinge = hingeAt(hs), hits = swingHits(C, alongX, mid, half, hinge, sg * full);
+    if (!best || hits < best.hits) best = { hs, sg, hinge, hits };
   }
-  d.cands.sort((a, b) => a.score - b.score);
-  d.openCol = new Collider(C.lo, C.hi, d.cands[0].M); d.angle = d.cands[0].angle; d.hinge.copy(d.cands[0].hinge);
+  let ang = best.sg * full;
+  if (best.hits > 0) {   // still touching something: open less, as far as it can go without touching
+    let bestDeg = null, bestHits = best.hits;
+    for (const deg of [70, 60, 50, 40, 30]) { const h = swingHits(C, alongX, mid, half, best.hinge, best.sg * deg * Math.PI / 180); if (h < bestHits) { bestHits = h; bestDeg = deg; } if (h === 0) break; }
+    if (bestDeg) ang = best.sg * bestDeg * Math.PI / 180;
+  }
+  const P = new THREE.Matrix4().makeTranslation(best.hinge.x, 0, best.hinge.z).multiply(new THREE.Matrix4().makeRotationY(ang)).multiply(new THREE.Matrix4().makeTranslation(-best.hinge.x, 0, -best.hinge.z));
+  d.openCol = new Collider(C.lo, C.hi, P.clone().multiply(C.M)); d.angle = ang; d.hinge.copy(best.hinge);
   d.openCol.enabled = false;
   world.add(d.closedCol); world.add(d.openCol);
 }
@@ -1257,11 +1280,11 @@ function startScreen() {
     ${TOUCH
       ? `<p><b>Left thumb</b>: move &nbsp; <b>Right thumb</b>: drag to look<br>
          <b>USE</b> (aim at the dot) &nbsp; <b>JUMP</b> &nbsp; <b>RUN</b> &nbsp; <b>CROUCH</b> (toggle)<br>
-         Top buttons: flashlight, camera view, pause</p>
+         Top buttons: camera view, pause (flashlight is in Settings)</p>
          <p style="font-size:13px;color:#9aa">Best played in landscape. Tap the corner button to go fullscreen.</p>`
       : `<p><kbd>W A S D</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>C</kbd> crouch<br>
          <kbd>Mouse</kbd> look &nbsp; <kbd>E</kbd> / <kbd>Click</kbd> use &nbsp; <kbd>V</kbd> first-person<br>
-         <kbd>F</kbd> flashlight &nbsp; <kbd>Esc</kbd> pause</p>`}
+         <kbd>F</kbd> flashlight (if enabled in Settings) &nbsp; <kbd>Esc</kbd> pause</p>`}
     <div class="big">${TOUCH ? 'Tap' : 'Click'} to start</div>`);
 }
 function endScreen(title, body, delay = 900) {
@@ -1357,7 +1380,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   G.keys.add(e.code);
   if (e.code === 'Space') G.jumpQ = true;
-  if (e.code === 'KeyF') flashOn = !flashOn;   // C (held) = crouch
+  if (e.code === 'KeyF' && flashAllowed) flashOn = !flashOn;   // C (held) = crouch
   if (e.code === 'KeyV') { G.firstPerson = !G.firstPerson; meActor.root.visible = !G.firstPerson; }
   if (e.code === 'KeyN') { dbgPoints.visible = dbgPath.visible = !dbgPoints.visible; }
   if (e.code === 'KeyR' && !MP.on && (G.state === 'won' || G.state === 'lost')) startRound();
@@ -1450,7 +1473,7 @@ if (TOUCH) {
   btn('bJump', () => { G.jumpQ = true; });
   btn('bSprint', b => { TI.sprint = !TI.sprint; b.classList.toggle('on', TI.sprint); });
   btn('bCrouch', b => { TI.crouch = !TI.crouch; b.classList.toggle('on', TI.crouch); });
-  btn('bFlash', b => { flashOn = !flashOn; b.classList.toggle('on', !flashOn); });
+  btn('bFlash', b => { if (!flashAllowed) return; flashOn = !flashOn; b.classList.toggle('on', !flashOn); });
   btn('bView', () => { G.firstPerson = !G.firstPerson; meActor.root.visible = !G.firstPerson; });
   btn('bPause', doPause);
   const root = document.documentElement;
@@ -1653,7 +1676,7 @@ function frame(now) {
   // subtle flashlight flicker, a harder stutter while Noobie hunts
   const hunt = G.noobie.spawned ? 1 : 0.35, t = now / 1000;
   const fl = 1 - hunt * 0.10 * Math.max(0, Math.sin(t * 23) * Math.sin(t * 7.3)) - (Math.random() < 0.004 * hunt ? 0.55 : 0);
-  flash.intensity = flashOn ? FLASH_I * fl : 0;
+  flash.intensity = flashAllowed && flashOn ? FLASH_I * fl : 0;
   renderer.render(scene, camera);
 }
 
@@ -1966,8 +1989,18 @@ function toMenuState() {
 }
 function showMainMenu(msg = '') {
   toMenuState();
-  setMenu(`<h1>Noobie</h1><button class="mbtn" id="bPlay">Play</button><button class="mbtn" id="bMulti">Join room</button><div class="mmsg">${esc(msg)}</div>`);
-  $('bPlay').onclick = showChapterSelect; $('bMulti').onclick = () => { MP.pendingMode = null; showMultiMenu(); };
+  setMenu(`<h1>Noobie</h1><button class="mbtn" id="bPlay">Play</button><button class="mbtn" id="bMulti">Join room</button><button class="mbtn" id="bSet">Settings</button><div class="mmsg">${esc(msg)}</div>`);
+  $('bSet').onclick = showSettings; $('bPlay').onclick = showChapterSelect; $('bMulti').onclick = () => { MP.pendingMode = null; showMultiMenu(); };
+}
+function showSettings() {
+  const label = () => `Flashlight: ${flashAllowed ? 'On' : 'Off'}`;
+  setMenu(`<h2>Settings</h2><button class="mbtn ${flashAllowed ? 'on' : ''}" id="bFl">${label()}</button><div class="mhint">The house is very dark without it.</div><button class="mbtn" id="bBack">Back</button>`);
+  $('bFl').onclick = () => {
+    flashAllowed = !flashAllowed; flashOn = true; applyFlashSetting();
+    try { localStorage.setItem('noobieFlash', flashAllowed ? '1' : '0'); } catch (_) {}
+    $('bFl').textContent = label(); $('bFl').classList.toggle('on', flashAllowed);
+  };
+  $('bBack').onclick = () => showMainMenu();
 }
 // Chapter select -> (Chapter 1: House) -> who is Noobie? A bot starts a solo run, a player goes to the room menu (a friend plays Noobie)
 function showChapterSelect() {
